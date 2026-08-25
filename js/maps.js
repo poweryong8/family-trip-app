@@ -253,5 +253,27 @@ window.FTMap = (function () {
     };
   }
 
-  return { init, setMarkers, clearMarkers, fitBounds, panTo, getCenter, isReady, clearRoute, rendererCount, drawRoute, drawTransit, searchText, nearbyFood };
+  // 가게 상세 (영업시간·전화·웹사이트)
+  function placeDetails(placeId) {
+    return new Promise((res) => {
+      try {
+        service().getDetails({ placeId: placeId, fields: ['name', 'rating', 'user_ratings_total', 'formatted_address', 'formatted_phone_number', 'website', 'opening_hours', 'price_level', 'url', 'geometry'] }, (p, status) => {
+          if (status !== 'OK' || !p) { res(null); return; }
+          res({
+            rating: p.rating || null,
+            reviews: p.user_ratings_total || 0,
+            price: p.price_level || null,
+            open: p.opening_hours ? p.opening_hours.open_now : null,
+            hours: p.opening_hours ? (p.opening_hours.weekday_text || null) : null,
+            address: p.formatted_address || '',
+            phone: p.formatted_phone_number || null,
+            website: p.website || null,
+            url: p.url || null
+          });
+        });
+      } catch (e) { res(null); }
+    });
+  }
+
+  return { init, setMarkers, clearMarkers, fitBounds, panTo, getCenter, isReady, clearRoute, rendererCount, drawRoute, drawTransit, searchText, nearbyFood, placeDetails };
 })();
