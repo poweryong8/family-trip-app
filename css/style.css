@@ -127,10 +127,17 @@ button:focus-visible,a:focus-visible,select:focus-visible,[role="button"]:focus-
 
 /* ===== 경로 모드 (인라인) ===== */
 #routeBar{display:flex;flex-direction:column;gap:8px;padding:0 14px 10px;border-bottom:1px solid var(--line);background:var(--surface)}
-.rb-info{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rb-info{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .rb-info .cnt{font-size:13px;color:var(--muted);font-weight:700}
 .place-row.rm .pcheck{width:24px;height:24px;accent-color:var(--accent);margin-top:4px;flex:0 0 auto}
 .place-row.rm .pacts{display:none}
+
+/* ===== 구간 교통편 안내 (스케줄) ===== */
+.tt-sched{background:var(--paper);border-radius:10px;padding:9px 12px;margin-top:6px}
+.tt-sched .tt-line{display:inline-flex;align-items:center;gap:4px;background:var(--accent-soft);color:var(--accent);border-radius:8px;padding:3px 9px;font-size:12.5px;font-weight:800;margin-bottom:4px}
+.tt-sched .si{font-size:13.5px;font-weight:700;margin:2px 0}
+.tt-sched .sh{font-size:12.5px;color:var(--muted)}
+.tt-sched a{font-size:12.5px;font-weight:700;color:var(--accent)}
 
 /* ===== 대중교통 시간표 (구글 지도 스타일) ===== */
 .tt-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line);flex-wrap:wrap}

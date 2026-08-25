@@ -22,6 +22,32 @@ window.FTA_DATA = {
     { name: '도난버스 도시간버스 — 노보리베쓰↔신치토세', url: 'https://www.donanbus.co.jp/citybus/', emoji: '✈️' }
   ],
 
+  // 구간별 교통편 안내 (구글 트랜짓 미지원 구간 대체용 — 참고값, 최신은 공식 링크)
+  // match: 구간 양 끝 장소명에 모두 포함되면 표시
+  SCHEDULES: [
+    { id: 'sap-otaru', match: ['삿포로', '오타루'], emoji: '🚄', line: 'JR函館본선 快速 에어포트',
+      info: '최속 32분 · 800엔 · 매시간 3편 (1일 163편)', hours: '5:40~23:30 운행',
+      note: '미나미오타루역 하차 → 오르골당·상점가 내리막길', url: 'https://www.jrhokkaido.co.jp/' },
+    { id: 'cts-sap', match: ['신치토세', '삿포로'], emoji: '🚄', line: 'JR 快速 에어포트',
+      info: '최속 37분(특급 33분) · 1,150엔 · 매시간 6편 (약 10분 간격)', hours: '5:30~23:30 운행',
+      note: '공항↔삿포로 모두 동일. 공항 리무진(약 70분, 1,300엔)도 있음', url: 'https://www.jrhokkaido.co.jp/airport/' },
+    { id: 'sap-nobo', match: ['삿포로', '노보리베쓰'], emoji: '🚄', line: 'JR 특급 스즈란',
+      info: '약 1시간 10분 · 4,890엔(특급 포함) · 하루 약 7회', hours: '대표: 7:30 / 9:21 / 13:46 / 16:07 / 19:14 발',
+      note: '登別역→온천거리 버스 약 15분 별도. 일반열차는 2,530엔·약 2시간', url: 'https://www.jrhokkaido.co.jp/' },
+    { id: 'sap-nobo-bus', match: ['삿포로', '노보리베쓰'], emoji: '🚌', line: '도난버스 고속온센호',
+      info: '약 1시간 50분 · 2,800~3,800엔 · 완전 예약제', hours: '삿포로역앞 → 登別온천(문전 하차)',
+      note: 'JR보다 저렴하고 온천 앞까지 직행', url: 'https://www.donanbus.co.jp/map/sap_onsen/' },
+    { id: 'nobo-cts', match: ['노보리베쓰', '신치토세'], emoji: '🚌', line: '도난버스 고속登別온천 에어포트호',
+      info: '약 1시간 · 예약제', hours: '登別온천 → 공항 직행',
+      note: '5일차 이동에 최적. JR 경유(登別→南千歳→공항)도 가능', url: 'https://www.donanbus.co.jp/citybus/' },
+    { id: 'sap-biei', match: ['삿포로', '비에이'], emoji: '🚌', line: 'Resort Liner / 일일 투어버스',
+      info: '시즌(6~10월) 운행 · 예약 필수', hours: '아침 출발 · 저녁 복귀 1일 코스',
+      note: '3일차 비에이·후라노 이동은 공식 예약 사이트에서 확인', url: 'https://www.access-n.jp/' },
+    { id: 'zoo', match: ['동물원'], emoji: '🚇', line: '지하철 도호선 + 도보',
+      info: '오도리 → 마루야마공원 약 10분 · 290엔', hours: '',
+      note: '마루야마공원역 → 동물원 도보 약 10분', url: 'https://www.jrhokkaido.co.jp/' }
+  ],
+
   SEED_TRIPS: [
     {
       id: 'sapporo-202609',

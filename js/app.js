@@ -132,7 +132,9 @@
       if (e.target.closest('#rbExit')) {
         routeModeOn = false;
         applyRouteMode();
+        return;
       }
+      if (e.target.closest('#rbAdd')) { openRouteSelectModal(); }
     });
 
     // 모달 공통: 배경/✕/Esc
@@ -619,6 +621,23 @@
     drawDayRoute(places);
   }
 
+  // 구글 트랜짓 미지원 구간 → 내장 SCHEDULES 참고 교통편 찾기 (양 끝 장소명 기준)
+  // 점수: 양쪽 매칭 2점 > 한쪽 1점, 동점이면 키워드가 적은(특화된) 항목 우선
+  function findSchedule(from, to) {
+    const scheds = (window.FTA_DATA && FTA_DATA.SCHEDULES) || [];
+    const f = from || '', t = to || '';
+    let best = null, bestScore = 0, bestSpec = 99;
+    scheds.forEach(s => {
+      const sf = s.match.some(k => f.includes(k)) ? 1 : 0;
+      const st = s.match.some(k => t.includes(k)) ? 1 : 0;
+      const score = sf + st;
+      if (score > bestScore || (score === bestScore && score > 0 && s.match.length < bestSpec)) {
+        bestScore = score; best = s; bestSpec = s.match.length;
+      }
+    });
+    return bestScore >= 1 ? best : null;
+  }
+
   const MODE_LABEL = { DRIVING: '🚗 차', TRANSIT: '🚌 대중교통', WALKING: '🚶 도보' };
 
   function showRoutePanel(active) {
@@ -639,7 +658,19 @@
         h += '<div class="leg"><b>' + (i + 1) + '. ' + esc(leg.from) + ' → ' + esc(leg.to) + '</b>' +
           '<span class="tm">' + esc(leg.dur) + (leg.dist ? ' · ' + esc(leg.dist) : '') + '</span>';
         if (leg.noTransit) {
-          h += '<div class="tt-note">🚌 대중교통 정보 없음(구글 미지원 구간) — [시간표 · 이동]의 공식 사이트에서 확인해 주세요</div>';
+          h += '<div class="tt-note">🚌 대중교통 정보 없음(구글 미지원 구간) — 참고 교통편:</div>';
+          const sched = findSchedule(leg.from, leg.to);
+          if (sched) {
+            h += '<div class="tt-sched">' +
+              '<span class="tt-line">' + sched.emoji + ' ' + esc(sched.line) + '</span>' +
+              '<div class="tm">' + esc(sched.info) + '</div>' +
+              (sched.hours ? '<div class="tm">🕐 ' + esc(sched.hours) + '</div>' : '') +
+              (sched.note ? '<div class="tm">💡 ' + esc(sched.note) + '</div>' : '') +
+              '<a class="tp-link" href="' + esc(sched.url) + '" target="_blank" rel="noopener">공식 시간표 · 예약</a>' +
+              '</div>';
+          } else {
+            h += '<div class="tt-note">— [시간표 · 이동]의 공식 사이트에서 확인해 주세요</div>';
+          }
         } else if (leg.walkOnly) {
           h += '<div class="tt-note">🚶 도보 이동 (대중교통 구간 없음)</div>';
         } else {
