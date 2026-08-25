@@ -64,6 +64,8 @@
     });
     $('#btnAddPlace').addEventListener('click', () => openPlaceModal(null));
     $('#sheetMini').addEventListener('click', () => {
+      // 경로 모드 중에는 시트를 접을 수 없음 (장소 체크박스가 사라져 경로 선택 불가)
+      if (routeModeOn) { toast('경로 모드에서는 일정 목록이 필요해요. 경로 종료 후 접어 주세요.'); return; }
       const s = $('#sheet');
       s.classList.toggle('mini');
       $('#sheetMini').textContent = s.classList.contains('mini') ? '📋 일정 크게' : '🗺️ 지도 크게';
@@ -665,6 +667,13 @@
     const seg = $('#routeBarSeg');
     bar.classList.toggle('hidden', !routeModeOn);
     if (routeModeOn) {
+      // 경로 모드에서는 장소 체크박스 목록이 보여야 하므로 시트 mini 강제 해제
+      const sheet = $('#sheet');
+      if (sheet.classList.contains('mini')) {
+        sheet.classList.remove('mini');
+        const miniBtn = $('#sheetMini');
+        if (miniBtn) miniBtn.textContent = '🗺️ 지도 크게';
+      }
       seg.innerHTML = Object.keys(MODE_LABEL).map(m =>
         '<button data-mode="' + m + '" class="' + (routeMode === m ? 'on' : '') + '">' + MODE_LABEL[m] + '</button>').join('');
       refreshDay();
