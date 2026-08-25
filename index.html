@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F2">
+<title>우리 가족 여행</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">🧳 <span id="appName">우리 가족 여행</span></div>
+    <div class="top-actions">
+      <select id="tripSelect" aria-label="여행 선택"></select>
+      <button id="btnReport" class="icon-btn" type="button" title="여행 리포트">📖</button>
+      <button id="btnSettings" class="icon-btn" type="button" title="설정">⚙️</button>
+    </div>
+  </header>
+
+  <div id="viewBar">
+    <div id="viewSwitch" role="tablist" aria-label="화면 전환">
+      <button type="button" role="tab" data-view="map" class="on">🗺️ 지도</button>
+      <button type="button" role="tab" data-view="list">📋 일정</button>
+    </div>
+  </div>
+
+  <nav id="dayTabs" aria-label="일자 선택"></nav>
+
+  <div id="split">
+    <main id="mapWrap">
+      <div id="map"></div>
+      <div id="mapMsg" class="hidden" role="alert"></div>
+      <div id="routeInfo" class="hidden"></div>
+      <div id="mapFab">
+        <button id="btnSearch" class="fab" type="button" title="장소 검색">🔍<span>검색</span></button>
+        <button id="btnNearby" class="fab" type="button" title="주변 맛집">🍜<span>맛집</span></button>
+        <button id="btnRoute" class="fab" type="button" title="이동 경로 보기">🚗<span>경로</span></button>
+      </div>
+    </main>
+
+    <section id="sheet" aria-label="일정 목록">
+      <div class="sheet-handle" id="sheetToggle" role="button" tabindex="0" aria-label="일정 목록 펼치기/접기">
+        <div class="handle-bar"></div>
+      </div>
+      <div class="sheet-head">
+        <h2 id="sheetDayTitle"></h2>
+        <div class="sheet-actions">
+          <button id="btnAddPlace" class="btn btn-primary" type="button">+ 장소 추가</button>
+          <button id="btnTransport" class="btn btn-ghost" type="button">🚌 시간표 · 이동</button>
+        </div>
+      </div>
+      <div id="placeList" class="place-list"></div>
+      <div id="sheetEmpty" class="empty hidden">
+        <p>아직 장소가 없어요.</p>
+        <button id="btnEmptySearch" class="btn btn-primary" type="button">🔍 장소 검색으로 추가</button>
+      </div>
+    </section>
+  </div>
+
+  <section id="itinerary" class="hidden" aria-label="일정 보기"></section>
+</div>
+
+<!-- 모달 루트 -->
+<div id="modalRoot"></div>
+
+<!-- 숨김 입력: 사진 촬영/선택, JSON 가져오기 -->
+<input type="file" id="photoInput" accept="image/*" class="hidden">
+<input type="file" id="importInput" accept="application/json,.json" class="hidden">
+
+<script src="js/config.js?v=6"></script>
+<script src="js/data.js?v=6"></script>
+<script src="js/storage.js?v=6"></script>
+<script src="js/maps.js?v=6"></script>
+<script src="js/report.js?v=6"></script>
+<script src="js/app.js?v=6"></script>
+</body>
+</html>
