@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F2">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="가족여행">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<title>우리 가족 여행</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/mobile.css?v=m1">
+</head>
+<body>
+<div id="app">
+  <!-- 컴팩트 헤더: 여행명 + 설정 -->
+  <header id="topbar">
+    <button id="tripBtn" type="button" aria-label="여행 선택">
+      <span id="tripName">여행</span><span id="tripCaret">▾</span>
+    </button>
+    <button id="btnSettings" class="icon-btn" type="button" aria-label="설정">⚙️</button>
+  </header>
+
+  <!-- 일자 칩 -->
+  <nav id="dayChips" aria-label="일자 선택"></nav>
+
+  <div id="stage">
+    <!-- 지도: 항상 마운트 유지 (탭 전환 시 재렌더링 글리치 방지) -->
+    <div id="mapView">
+      <div id="map"></div>
+      <div id="routeInfo" class="hidden"></div>
+      <div id="fabStack">
+        <button id="btnRoute" class="fab" type="button" title="경로">🚗<span>경로</span></button>
+        <button id="btnNearby" class="fab" type="button" title="주변 맛집">🍜<span>맛집</span></button>
+        <button id="btnSearch" class="fab fab-main" type="button" title="장소 검색">🔍<span>검색</span></button>
+      </div>
+    </div>
+
+    <!-- 장소 목록 바텀시트 (드래그: peek → 절반 → 전체) -->
+    <section id="sheet" aria-label="일정 목록">
+      <div id="sheetGrip" role="button" aria-label="시트 펼치기/접기"></div>
+      <div id="sheetHead">
+        <div id="sheetTitle"></div>
+        <button id="btnAddPlace" class="btn btn-primary" type="button">+ 장소</button>
+      </div>
+      <div id="routeBar" class="hidden">
+        <div class="seg" id="routeBarSeg"></div>
+        <div class="rb-info">
+          <span class="cnt" id="rbCount"></span>
+          <div class="rb-btns">
+            <button id="rbAdd" class="btn btn-ghost" type="button">➕ 다른 장소</button>
+            <button id="rbExit" class="btn btn-ghost" type="button">경로 종료</button>
+          </div>
+        </div>
+      </div>
+      <div id="sheetRouteInfo" class="hidden"></div>
+      <div id="placeList" class="place-list"></div>
+      <div id="sheetEmpty" class="empty hidden">
+        <p>아직 장소가 없어요.</p>
+        <button id="btnEmptySearch" class="btn btn-primary" type="button">🔍 장소 검색으로 추가</button>
+      </div>
+    </section>
+
+    <!-- 비지도 탭 콘텐츠 -->
+    <main id="panelView" class="hidden">
+      <div id="itinerary" class="hidden"></div>
+      <div id="moveView" class="hidden"></div>
+      <div id="moreView" class="hidden"></div>
+    </main>
+  </div>
+
+  <!-- 하단 탭 내비 -->
+  <nav id="tabbar" aria-label="하단 탭">
+    <button type="button" data-tab="map" class="on"><span class="tb-ico">🗺️</span><span>지도</span></button>
+    <button type="button" data-tab="list"><span class="tb-ico">📋</span><span>일정</span></button>
+    <button type="button" data-tab="move"><span class="tb-ico">🚌</span><span>이동</span></button>
+    <button type="button" data-tab="more"><span class="tb-ico">⋯</span><span>더보기</span></button>
+  </nav>
+</div>
+
+<!-- 토스트 / 모달 / 숨김 입력 -->
+<div id="toast" class="toast hidden" role="alert"></div>
+<div id="modalRoot"></div>
+<input type="file" id="photoInput" accept="image/*" multiple class="hidden">
+<input type="file" id="importInput" accept="application/json,.json" class="hidden">
+
+<script src="js/config.js?v=m1"></script>
+<script src="js/data.js?v=m1"></script>
+<script src="js/storage.js?v=m1"></script>
+<script src="js/maps.js?v=m1"></script>
+<script src="js/report.js?v=m1"></script>
+<script src="js/mobile.js?v=m1"></script>
+</body>
+</html>
