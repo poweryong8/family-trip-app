@@ -53,7 +53,6 @@
       renderTabs();
       refreshDay();
     });
-    $('#sheetToggle').addEventListener('click', () => $('#sheet').classList.toggle('collapsed'));
     $('#btnAddPlace').addEventListener('click', () => openPlaceModal(null));
     $('#btnEmptySearch').addEventListener('click', () => openSearchModal('search'));
     $('#btnTransport').addEventListener('click', openTransportModal);
@@ -437,7 +436,6 @@
     }
     if (!places) places = day.places;
     if (places.length < 2) { toast('경로에 선택한 장소가 2개 이상이어야 해요'); return; }
-    $('#sheet').classList.add('collapsed');
     showRoutePanel(null);
     const color = dayColor(activeDay - 1);
     // 안전 가드: 어떤 경우에도 '계산 중' 무한 대기 방지
@@ -456,7 +454,6 @@
     const days = trip.days.map((d, i) => ({ d, i }))
       .filter(x => x.d.places.filter(p => isFinite(p.lat) && isFinite(p.lng)).length >= 2);
     if (!days.length) { toast('경로를 보려면 장소가 2개 이상인 일자가 필요해요'); return; }
-    $('#sheet').classList.add('collapsed');
     M.clearRoute();
     showRoutePanel(null);
     const el = $('#routeInfo');
