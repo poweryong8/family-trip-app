@@ -61,7 +61,7 @@
     $('#btnSettings').addEventListener('click', openSettings);
     $('#btnSearch').addEventListener('click', () => openSearchModal('search'));
     $('#btnNearby').addEventListener('click', () => openSearchModal('nearby'));
-    $('#btnRoute').addEventListener('click', openRouteSelectModal);
+    $('#btnRoute').addEventListener('click', () => { if (activeDay === 0) drawAllDays(); else openRouteSelectModal(); });
     $('#viewSwitch').addEventListener('click', e => {
       const b = e.target.closest('[data-view]'); if (!b) return;
       if (b.dataset.view === view) return;
@@ -333,17 +333,27 @@
     const c = M.getCenter();
     const resEl = $('#srResults');
     resEl.innerHTML = '<div class="hint">검색 중…</div>';
-    const results = await M.searchText(query, c);
-    lastSearchResults = results;
-    renderSearchResults(results, resEl);
+    const r = await M.searchText(query, c);
+    lastSearchResults = r.results;
+    if (!r.ok) {
+      resEl.innerHTML = '<div class="empty"><p>검색 실패 (' + esc(r.status) + ')</p>' +
+        '<p class="hint">잠시 후 다시 시도해 주세요. 계속되면 Google Cloud 할당량을 확인해 보세요.</p></div>';
+      return;
+    }
+    renderSearchResults(r.results, resEl);
   }
 
   async function runNearby() {
     const resEl = $('#srResults');
     resEl.innerHTML = '<div class="hint">주변 맛집 찾는 중…</div>';
-    const results = await M.nearbyFood(M.getCenter(), 1200);
-    lastSearchResults = results;
-    renderSearchResults(results, resEl);
+    const r = await M.nearbyFood(M.getCenter(), 1200);
+    lastSearchResults = r.results;
+    if (!r.ok) {
+      resEl.innerHTML = '<div class="empty"><p>검색 실패 (' + esc(r.status) + ')</p>' +
+        '<p class="hint">잠시 후 다시 시도해 주세요. 계속되면 Google Cloud 할당량을 확인해 보세요.</p></div>';
+      return;
+    }
+    renderSearchResults(r.results, resEl);
   }
 
   function renderSearchResults(results, resEl) {
@@ -418,7 +428,7 @@
 
   function drawDayRoute(placesOverride) {
     const trip = currentTrip(); if (!trip) return;
-    if (activeDay === 0) { toast('일자 탭을 먼저 선택해 주세요'); return; }
+    if (activeDay === 0) { drawAllDays(); return; }
     const day = trip.days[activeDay - 1];
     if (!M.isReady()) { toast('지도를 기다리는 중이에요'); return; }
     let places = placesOverride;
@@ -430,8 +440,50 @@
     $('#sheet').classList.add('collapsed');
     showRoutePanel(null);
     const color = dayColor(activeDay - 1);
-    if (routeMode === 'TRANSIT') M.drawTransit(places, color, renderRouteResult);
-    else M.drawRoute(places, routeMode, color, renderRouteResult);
+    // 안전 가드: 어떤 경우에도 '계산 중' 무한 대기 방지
+    let guard = setTimeout(() => renderRouteResult({ error: '경로 계산이 오래 걸리고 있어요. 네트워크를 확인하고 다시 시도해 주세요.' }), 45000);
+    const finish = (r) => { clearTimeout(guard); renderRouteResult(r); };
+    try {
+      if (routeMode === 'TRANSIT') M.drawTransit(places, color, finish);
+      else M.drawRoute(places, routeMode, color, finish);
+    } catch (e) { clearTimeout(guard); renderRouteResult({ error: '경로 요청 오류: ' + e.message }); }
+  }
+
+  // 전체 보기: 5일 동선을 일자별 색으로 한 지도에 표시
+  async function drawAllDays() {
+    const trip = currentTrip(); if (!trip) return;
+    if (!M.isReady()) { toast('지도를 기다리는 중이에요'); return; }
+    const days = trip.days.map((d, i) => ({ d, i }))
+      .filter(x => x.d.places.filter(p => isFinite(p.lat) && isFinite(p.lng)).length >= 2);
+    if (!days.length) { toast('경로를 보려면 장소가 2개 이상인 일자가 필요해요'); return; }
+    $('#sheet').classList.add('collapsed');
+    M.clearRoute();
+    showRoutePanel(null);
+    const el = $('#routeInfo');
+    const hint = el.querySelector('.hint');
+    hint.textContent = '일자별 동선 계산 중…';
+    const mode = routeMode;
+    let done = 0;
+    for (const { d, i } of days) {
+      const places = d.places.filter(p => isFinite(p.lat) && isFinite(p.lng));
+      const line = document.createElement('div');
+      line.className = 'leg';
+      line.innerHTML = '<b>' + (i + 1) + '일차 · ' + esc(d.title) + '</b> <span class="tm">계산 중…</span>';
+      hint.insertAdjacentElement('beforebegin', line);
+      let res = null;
+      try {
+        res = await new Promise(cb => {
+          if (mode === 'TRANSIT') M.drawTransit(places, dayColor(i), cb, { keep: true });
+          else M.drawRoute(places, mode, dayColor(i), cb, { keep: true });
+        });
+      } catch (e) { res = { error: e.message }; }
+      const tm = line.querySelector('.tm');
+      if (!res || res.error) tm.textContent = res && res.error ? '실패 (' + res.error + ')' : '실패';
+      else if (res.transit) tm.textContent = '구간 ' + res.legs.length + '개';
+      else tm.textContent = res.dist + 'km · 약 ' + res.time + '분';
+      done++;
+    }
+    hint.textContent = '전체 동선 완료 — ' + done + '개 일자 · 색상은 일자별';
   }
 
   const MODE_LABEL = { DRIVING: '🚗 차', TRANSIT: '🚌 대중교통', WALKING: '🚶 도보' };

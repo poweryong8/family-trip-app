@@ -103,22 +103,36 @@ window.FTMap = (function () {
     renderers.forEach(r => r.setMap(null));
     renderers = [];
   }
+  function rendererCount() { return renderers.length; }
+
+  // Directions 요청 래퍼: 타임아웃(10초) + 예외 방지 — 절대 안 끝나지 않는 콜백 없음
+  function routeReq(svc, req, ms) {
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve({ status: 'TIMEOUT' }), ms || 10000);
+      try {
+        svc.route(req, (r, st) => { clearTimeout(t); resolve({ status: st, res: r }); });
+      } catch (e) { clearTimeout(t); resolve({ status: 'EXCEPTION', error: e.message }); }
+    });
+  }
 
   // 차/도보: waypoints 한 번에 요청
-  function drawRoute(places, mode, dayColor, onDone) {
-    clearRoute();
-    if (places.length < 2) { onDone({ error: '경로를 보려면 장소가 2개 이상 필요해요' }); return; }
+  function drawRoute(places, mode, color, onDone, opts) {
+    opts = opts || {};
+    if (!opts.keep) clearRoute();
+    const valid = places.filter(p => isFinite(p.lat) && isFinite(p.lng));
+    if (valid.length < 2) { onDone({ error: '좌표가 올바른 장소가 2개 이상 필요해요 (장소를 수정해 주세요)' }); return; }
     const svc = new google.maps.DirectionsService();
-    const origin = places[0], dest = places[places.length - 1];
-    const waypoints = places.slice(1, -1).map(p => ({ location: { lat: p.lat, lng: p.lng }, stopover: true }));
-    svc.route({
+    const origin = valid[0], dest = valid[valid.length - 1];
+    const waypoints = valid.slice(1, -1).map(p => ({ location: { lat: p.lat, lng: p.lng }, stopover: true }));
+    routeReq(svc, {
       origin: { lat: origin.lat, lng: origin.lng },
       destination: { lat: dest.lat, lng: dest.lng },
       waypoints: waypoints, optimizeWaypoints: false, travelMode: mode
-    }, (res, status) => {
-      if (status !== 'OK') { onDone({ error: '경로를 찾지 못했어요 (' + status + ')' }); return; }
+    }).then(got => {
+      if (got.status !== 'OK') { onDone({ error: '경로를 찾지 못했어요 (' + got.status + ')' }); return; }
+      const res = got.res;
       const r = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true,
-        polylineOptions: { strokeColor: dayColor, strokeWeight: 6, strokeOpacity: 0.85 } });
+        polylineOptions: { strokeColor: color, strokeWeight: 6, strokeOpacity: 0.9 } });
       r.setDirections(res);
       renderers.push(r);
       const legs = res.routes[0].legs;
@@ -128,7 +142,7 @@ window.FTMap = (function () {
       legs.forEach((l, i) => {
         const main = l.steps.find(s => s.travel_mode === 'TRANSIT');
         steps.push({
-          from: places[i].name, to: places[i + 1].name,
+          from: valid[i].name, to: valid[i + 1].name,
           dist: l.distance.text, dur: l.duration.text,
           line: main && main.transit ? (main.transit.line.short_name || main.transit.line.name) : null,
           vehicle: main && main.transit ? main.transit.line.vehicle.type : null
@@ -138,64 +152,65 @@ window.FTMap = (function () {
     });
   }
 
-  // 대중교통: 구간별로 요청 (경유지 미지원) → 구간별 노선·시간 안내
-  // 대중교통 구간이 없는 짧은 이동(ZERO_RESULTS)은 도보로 자동 대체
-  function drawTransit(places, dayColor, onDone) {
-    clearRoute();
-    if (places.length < 2) { onDone({ error: '경로를 보려면 장소가 2개 이상 필요해요' }); return; }
+  // 대중교통: 구간별 순차 요청 (경유지 미지원 + 할당량 폭주 방지)
+  // 대중교통 없으면 도보 대체 → 그것도 실패/과도하면 '시간표 안내' 처리 (항상 완료됨)
+  async function drawTransit(places, color, onDone, opts) {
+    opts = opts || {};
+    if (!opts.keep) clearRoute();
+    const valid = places.filter(p => isFinite(p.lat) && isFinite(p.lng));
+    if (valid.length < 2) { onDone({ error: '좌표가 올바른 장소가 2개 이상 필요해요 (장소를 수정해 주세요)' }); return; }
     const svc = new google.maps.DirectionsService();
     const legsOut = [];
-    let pending = places.length - 1, failed = false;
 
-    function finishLeg(i, res, walkOnly) {
-      if (failed) return;
+    function legInfo(res) {
       const leg = res.routes[0].legs[0];
-      // 도보로 대체했는데 40분 초과면 실용적이지 않음 → 시간표 안내로 전환
-      const walkTooLong = walkOnly && leg.duration.value > 2400;
-      if (!walkTooLong) {
-        const r = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true,
-          polylineOptions: { strokeColor: dayColor, strokeWeight: 5, strokeOpacity: 0.75 } });
-        r.setDirections(res);
-        renderers.push(r);
-      }
-      const transitSteps = walkOnly ? [] : leg.steps.filter(s => s.travel_mode === 'TRANSIT').map(s => {
-        const t = s.transit;
-        return {
-          line: t.line.short_name || t.line.name,
-          vehicle: t.line.vehicle.type,
-          dep: t.departure_stop.name, arr: t.arrival_stop.name,
-          depT: t.departure_time ? t.departure_time.text : null,
-          arrT: t.arrival_time ? t.arrival_time.text : null,
-          dur: s.duration.text
-        };
-      });
-      legsOut[i] = {
-        from: places[i].name, to: places[i + 1].name,
-        dur: leg.duration.text, dist: leg.distance ? leg.distance.text : '',
-        transit: transitSteps, walkOnly: walkOnly && !walkTooLong, noTransit: walkTooLong
+      return {
+        dur: leg.duration.text,
+        dist: leg.distance ? leg.distance.text : '',
+        transit: leg.steps.filter(s => s.travel_mode === 'TRANSIT').map(s => {
+          const t = s.transit;
+          return {
+            line: t.line.short_name || t.line.name,
+            vehicle: t.line.vehicle.type,
+            dep: t.departure_stop.name, arr: t.arrival_stop.name,
+            depT: t.departure_time ? t.departure_time.text : null,
+            arrT: t.arrival_time ? t.arrival_time.text : null,
+            dur: s.duration.text
+          };
+        })
       };
-      pending--;
-      if (pending === 0) onDone({ ok: true, transit: true, legs: legsOut });
     }
 
-    for (let i = 0; i < places.length - 1; i++) {
-      (function (i) {
-        const req = {
-          origin: { lat: places[i].lat, lng: places[i].lng },
-          destination: { lat: places[i + 1].lat, lng: places[i + 1].lng }
-        };
-        svc.route(Object.assign({ travelMode: 'TRANSIT' }, req), (res, status) => {
-          if (failed) return;
-          if (status === 'OK') { finishLeg(i, res, false); return; }
-          // 대중교통 구간 없음(ZERO_RESULTS 등) → 도보로 대체
-          svc.route(Object.assign({ travelMode: 'WALKING' }, req), (res2, st2) => {
-            if (failed) return;
-            if (st2 === 'OK') finishLeg(i, res2, true);
-            else { failed = true; onDone({ error: (i + 1) + '번째 구간 경로를 찾지 못했어요 (' + status + ')' }); }
-          });
-        });
-      })(i);
+    for (let i = 0; i < valid.length - 1; i++) {
+      const from = valid[i], to = valid[i + 1];
+      const req = { origin: { lat: from.lat, lng: from.lng }, destination: { lat: to.lat, lng: to.lng } };
+      let got = await routeReq(svc, Object.assign({ travelMode: 'TRANSIT' }, req));
+      if (got.status !== 'OK') {
+        got = await routeReq(svc, Object.assign({ travelMode: 'WALKING' }, req));
+      }
+      const out = { from: from.name, to: to.name, dur: '', dist: '', transit: [], walkOnly: false, noTransit: false };
+      if (got.status === 'OK') {
+        const info = legInfo(got.res);
+        const leg = got.res.routes[0].legs[0];
+        const walkOnly = info.transit.length === 0;
+        const walkTooLong = walkOnly && leg.duration.value > 2400; // 도보 40분 초과는 비현실적
+        out.dur = info.dur; out.dist = info.dist;
+        out.transit = info.transit;
+        out.walkOnly = walkOnly && !walkTooLong;
+        out.noTransit = walkTooLong;
+        if (!out.noTransit) {
+          const r = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true,
+            polylineOptions: { strokeColor: color, strokeWeight: 5, strokeOpacity: 0.85 } });
+          r.setDirections(got.res);
+          renderers.push(r);
+        }
+      } else {
+        out.noTransit = true;
+        out.dur = got.status;
+      }
+      legsOut.push(out);
     }
+    onDone({ ok: true, transit: true, legs: legsOut });
   }
 
   /* ---------- 검색 ---------- */
@@ -203,21 +218,24 @@ window.FTMap = (function () {
 
   function searchText(query, center) {
     return new Promise((res) => {
-      service().textSearch({ query: query, location: center, radius: 30000 }, (results, status) => {
-        if (status !== 'OK' || !results) { res([]); return; }
-        res(results.slice(0, 12).map(p => fmtPlace(p)));
-      });
+      try {
+        service().textSearch({ query: query, location: center, radius: 30000 }, (results, status) => {
+          res({ ok: status === 'OK', status: status, results: status === 'OK' && results ? results.slice(0, 12).map(p => fmtPlace(p)) : [] });
+        });
+      } catch (e) { res({ ok: false, status: 'EXCEPTION', results: [] }); }
     });
   }
   function nearbyFood(center, radius) {
     return new Promise((res) => {
-      service().nearbySearch({ location: center, radius: radius || 1200, type: 'restaurant' }, (results, status) => {
-        if (status !== 'OK' || !results) { res([]); return; }
-        const good = results
-          .filter(p => p.rating && p.rating >= 4.0)
-          .sort((a, b) => (b.rating - a.rating) || ((b.user_ratings_total || 0) - (a.user_ratings_total || 0)));
-        res(good.slice(0, 12).map(p => fmtPlace(p)));
-      });
+      try {
+        service().nearbySearch({ location: center, radius: radius || 1200, type: 'restaurant' }, (results, status) => {
+          if (status !== 'OK' || !results) { res({ ok: false, status: status, results: [] }); return; }
+          const good = results
+            .filter(p => p.rating && p.rating >= 4.0)
+            .sort((a, b) => (b.rating - a.rating) || ((b.user_ratings_total || 0) - (a.user_ratings_total || 0)));
+          res({ ok: true, status: status, results: good.slice(0, 12).map(p => fmtPlace(p)) });
+        });
+      } catch (e) { res({ ok: false, status: 'EXCEPTION', results: [] }); }
     });
   }
   function fmtPlace(p) {
@@ -235,5 +253,5 @@ window.FTMap = (function () {
     };
   }
 
-  return { init, setMarkers, clearMarkers, fitBounds, panTo, getCenter, isReady, clearRoute, drawRoute, drawTransit, searchText, nearbyFood };
+  return { init, setMarkers, clearMarkers, fitBounds, panTo, getCenter, isReady, clearRoute, rendererCount, drawRoute, drawTransit, searchText, nearbyFood };
 })();
