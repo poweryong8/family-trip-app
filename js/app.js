@@ -6,6 +6,8 @@
   let activeDay = 0;          // 0=전체, 1..n=일차
   let routeMode = 'DRIVING';
   let routeSelection = null;  // { dayIdx, placeIds: [...] } — 경로에 선택한 장소
+  let routeExtras = [];       // 경로에만 추가한 장소 (일정 외 — 날짜/여행 변경 시 초기화)
+  let routePickResults = [];  // 경로 모달 '다른 장소' 검색 결과
   let routeModeOn = false;    // 인라인 경로 모드 (지도 화면 일정 패널)
   let routeDrawTimer = null;  // 체크 변경 디바운스
   let view = 'map';           // 'map' | 'list' (지도/일정)
@@ -43,6 +45,7 @@
       S.setActiveTrip(e.target.value);
       activeDay = 0;
       routeSelection = null;
+      routeExtras = [];
       routeModeOn = false;
       hideRoute();
       applyRouteMode();
@@ -53,6 +56,7 @@
       const b = e.target.closest('.day-tab'); if (!b) return;
       activeDay = Number(b.dataset.day);
       routeSelection = null;
+      routeExtras = [];
       hideRoute();
       renderTabs();
       refreshDay();
@@ -496,36 +500,87 @@
     if (activeDay === 0) { toast('일자 탭을 먼저 선택해 주세요'); return; }
     const day = trip.days[activeDay - 1];
     if (!day || day.places.length < 2) { toast('경로를 보려면 장소가 2개 이상 필요해요'); return; }
-    const prevSel = routeSelection && routeSelection.dayIdx === activeDay - 1 ? routeSelection.placeIds : null;
     const seg = '<div class="seg">' + Object.keys(MODE_LABEL).map(m =>
       '<button data-rmode="' + m + '" class="' + (routeMode === m ? 'on' : '') + '">' + MODE_LABEL[m] + '</button>').join('') + '</div>';
-    const items = day.places.map((p, i) => {
-      const cat = catInfo(p);
-      const checked = !prevSel || prevSel.indexOf(p.id) >= 0;
-      return '<label class="rs-row"><input type="checkbox" data-ridx="' + i + '"' + (checked ? ' checked' : '') + '><span>' + cat.emoji + ' ' + esc(p.name) + '</span></label>';
-    }).join('');
     const body =
       '<div class="field"><label>이동 수단</label>' + seg + '</div>' +
       '<div class="field"><label>경로에 포함할 장소 (일정 순서대로 연결)</label>' +
-      '<div class="rs-list">' + items + '</div></div>' +
-      '<div class="hint">숙소 → 식당처럼 필요한 곳만 골라 보세요. 순서는 일정 순서를 따릅니다.</div>' +
+      '<div class="rs-list" id="rmList"></div></div>' +
+      '<div class="hint">일정의 장소 + 아래에서 검색한 다른 장소를 함께 넣을 수 있어요.</div>' +
+      '<div class="field" style="margin-top:10px"><label>➕ 다른 장소 검색해서 추가</label>' +
+      '<div style="display:flex;gap:6px"><input type="text" id="rmQuery" placeholder="예: 오타루 스시">' +
+      '<button id="rmGo" class="btn btn-primary" style="min-height:44px;padding:0 14px">검색</button></div>' +
+      '<div id="rmResults"></div></div>' +
       '<button id="rsGo" class="btn btn-primary btn-block" style="margin-top:12px">🚗 경로 그리기</button>';
     showModal('경로 장소 선택', body);
     const segBtns = document.querySelectorAll('#modalRoot [data-rmode]');
     segBtns.forEach(b => b.addEventListener('click', () => {
-      routeMode = b.dataset.mode;
+      routeMode = b.dataset.rmode;
       segBtns.forEach(x => x.classList.toggle('on', x === b));
     }));
+    renderRouteModalList(day);
+    const q = $('#rmQuery');
+    q.addEventListener('keydown', e => { if (e.key === 'Enter') rmSearch(day); });
+    $('#rmGo').addEventListener('click', () => rmSearch(day));
     $('#rsGo').addEventListener('click', () => {
       const ids = [];
       document.querySelectorAll('#modalRoot [data-ridx]:checked').forEach(c => ids.push(day.places[Number(c.dataset.ridx)].id));
+      routeExtras.forEach((x, i) => {
+        const cb = document.querySelector('#modalRoot [data-rext="' + i + '"]');
+        if (cb && cb.checked) ids.push(x.id);
+      });
       closeModal();
       if (ids.length < 2) { toast('경로에 포함할 장소를 2개 이상 선택해 주세요'); return; }
       routeSelection = { dayIdx: activeDay - 1, placeIds: ids };
       view = 'map';
       applyView();
-      drawDayRoute(day.places.filter(p => ids.indexOf(p.id) >= 0));
+      drawDayRoute(day.places.filter(p => ids.indexOf(p.id) >= 0).concat(routeExtras.filter(x => ids.indexOf(x.id) >= 0)));
     });
+  }
+
+  // 경로 모달 체크 목록 (일정 장소 + 경로 전용 장소)
+  function renderRouteModalList(day) {
+    const prevSel = routeSelection && routeSelection.dayIdx === activeDay - 1 ? routeSelection.placeIds : null;
+    let items = day.places.map((p, i) => {
+      const cat = catInfo(p);
+      const checked = !prevSel || prevSel.indexOf(p.id) >= 0;
+      return '<label class="rs-row"><input type="checkbox" data-ridx="' + i + '"' + (checked ? ' checked' : '') + '><span>' + cat.emoji + ' ' + esc(p.name) + '</span></label>';
+    }).join('');
+    items += routeExtras.map((x, i) =>
+      '<label class="rs-row"><input type="checkbox" data-rext="' + i + '" checked><span>' + catInfo(x).emoji + ' ' + esc(x.name) + ' <span class="rt-badge">경로 전용</span></span></label>'
+    ).join('');
+    const el = $('#rmList');
+    if (el) el.innerHTML = items;
+  }
+
+  // 경로 모달: 다른 장소 검색 → [추가]로 routeExtras에 넣기
+  async function rmSearch(day) {
+    const q = $('#rmQuery');
+    const v = (q.value || '').trim();
+    const resEl = $('#rmResults');
+    if (!v) { toast('검색어를 입력해 주세요'); return; }
+    resEl.innerHTML = '<div class="hint">검색 중…</div>';
+    const r = await M.searchText(v, M.getCenter());
+    routePickResults = r.results;
+    if (!r.ok) { resEl.innerHTML = '<div class="empty"><p>검색 실패 (' + esc(r.status) + ')</p></div>'; return; }
+    if (!r.results.length) { resEl.innerHTML = '<div class="empty"><p>결과가 없어요. 검색어를 바꿔 보세요.</p></div>'; return; }
+    resEl.innerHTML = r.results.map((x, i) =>
+      '<div class="sr-row"><div class="sr-main"><div class="sr-name-btn" style="text-decoration:none">' + esc(x.name) + '</div>' +
+      '<div class="sr-meta">' + (x.rating ? '★ ' + x.rating + ' (' + x.reviews + ')' : '') + '<br>' + esc(x.address) + '</div></div>' +
+      '<button class="btn btn-primary" style="min-height:40px;padding:0 12px;font-size:13.5px" data-rmadd="' + i + '">추가</button></div>'
+    ).join('');
+    resEl.querySelectorAll('[data-rmadd]').forEach(b => b.addEventListener('click', () => {
+      const x = routePickResults[Number(b.dataset.rmadd)];
+      if (!x) return;
+      routeExtras.push({
+        id: 'rt_' + S.uid(), name: x.name,
+        category: (x.name || '').includes('카페') || (x.name || '').toLowerCase().includes('cafe') ? 'cafe' : 'restaurant',
+        lat: x.lat, lng: x.lng, note: x.rating ? '★ ' + x.rating + ' (리뷰 ' + x.reviews + ')' : '', tags: ['경로 전용'], links: {}
+      });
+      renderRouteModalList(day);
+      b.textContent = '✓ 추가됨';
+      b.disabled = true;
+    }));
   }
 
   function drawDayRoute(placesOverride) {
@@ -541,8 +596,9 @@
     if (places.length < 2) { toast('경로에 선택한 장소가 2개 이상이어야 해요'); return; }
     showRoutePanel(null);
     const color = dayColor(activeDay - 1);
-    // 안전 가드: 어떤 경우에도 '계산 중' 무한 대기 방지
-    let guard = setTimeout(() => renderRouteResult({ error: '경로 계산이 오래 걸리고 있어요. 네트워크를 확인하고 다시 시도해 주세요.' }), 45000);
+    // 안전 가드: 어떤 경우에도 '계산 중' 무한 대기 방지 (구간 수에 비례: 구간당 12초 + 8초)
+    const nLegs = Math.max(1, places.length - 1);
+    let guard = setTimeout(() => renderRouteResult({ error: '경로 계산이 오래 걸리고 있어요. 네트워크를 확인하고 다시 시도해 주세요.' }), 8000 + nLegs * 12000);
     const finish = (r) => { clearTimeout(guard); renderRouteResult(r); };
     try {
       if (routeMode === 'TRANSIT') M.drawTransit(places, color, finish);
@@ -801,18 +857,24 @@
 
   /* ================= 사진 ================= */
   async function onPhotoFile(e) {
-    const f = e.target.files[0]; e.target.value = '';
-    if (!f || !pendingPhoto) return;
+    const files = Array.from(e.target.files || []); e.target.value = '';
+    if (!files.length || !pendingPhoto) return;
     const ctx = pendingPhoto; pendingPhoto = null;
+    const trip = currentTrip();
+    if (!trip) return;
+    const place = trip.days[ctx.dayIdx] && trip.days[ctx.dayIdx].places[ctx.pIdx];
+    if (!place) return;
+    let saved = 0;
     try {
-      const dataUrl = await S.compressImage(f);
-      const trip = currentTrip();
-      const place = trip.days[ctx.dayIdx].places[ctx.pIdx];
-      await S.addPhoto(trip.id, place.id, { id: S.uid(), dataUrl, ts: Date.now() });
+      for (const f of files) {
+        const dataUrl = await S.compressImage(f);
+        await S.addPhoto(trip.id, place.id, { id: S.uid(), dataUrl, ts: Date.now() });
+        saved++;
+      }
       refreshDay();
-      toast('사진을 저장했어요');
+      toast(saved + '장의 사진을 저장했어요');
     } catch (err) {
-      toast(err.message || '사진 저장 실패');
+      toast('사진 저장 실패: ' + err.message + (saved ? ' (' + saved + '장 저장됨)' : ''));
     }
   }
 
