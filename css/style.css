@@ -60,6 +60,12 @@ button:focus-visible,a:focus-visible,select:focus-visible,[role="button"]:focus-
   #sheet{height:auto;flex:0 0 340px;border-top:none;border-left:1px solid var(--line)}
 }
 #sheet .place-list{flex:1;min-height:0}
+#sheetMini{display:none}
+@media(max-width:899px){
+  #sheetMini{display:inline-flex}
+  #sheet.mini{height:96px}
+  #sheet.mini .place-list,#sheet.mini #sheetEmpty{display:none}
+}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px}
 #sheetDayTitle{font-size:18px;font-weight:900;display:flex;align-items:center;gap:8px}
 .sheet-actions{display:flex;gap:6px}

@@ -63,6 +63,11 @@
       if (routeModeOn) scheduleRouteDraw();
     });
     $('#btnAddPlace').addEventListener('click', () => openPlaceModal(null));
+    $('#sheetMini').addEventListener('click', () => {
+      const s = $('#sheet');
+      s.classList.toggle('mini');
+      $('#sheetMini').textContent = s.classList.contains('mini') ? '📋 일정 크게' : '🗺️ 지도 크게';
+    });
     $('#btnEmptySearch').addEventListener('click', () => openSearchModal('search'));
     $('#btnTransport').addEventListener('click', openTransportModal);
     $('#btnReport').addEventListener('click', openReport);
@@ -95,6 +100,11 @@
       if (act === 'photo') { pendingPhoto = { dayIdx, pIdx, placeId: btn.dataset.place }; $('#photoInput').click(); }
       else if (act === 'edit') openPlaceModal({ dayIdx, pIdx });
       else if (act === 'del') deletePlace(dayIdx, pIdx);
+      else if (act === 'rtdel') {
+        routeExtras = routeExtras.filter(x => x.id !== btn.dataset.rtid);
+        refreshDay();
+        scheduleRouteDraw();
+      }
     }
     // 하단 시트 + 일정 보기 공통 행 액션
     $('#placeList').addEventListener('click', onPlaceListClick);
@@ -133,12 +143,12 @@
         scheduleRouteDraw();
         return;
       }
+      if (e.target.closest('#rbAdd')) { openRoutePicker(); return; }
       if (e.target.closest('#rbExit')) {
         routeModeOn = false;
+        routeExtras = [];
         applyRouteMode();
-        return;
       }
-      if (e.target.closest('#rbAdd')) { openRouteSelectModal(); }
     });
 
     // 모달 공통: 배경/✕/Esc
@@ -204,14 +214,17 @@
       const row = document.createElement('div');
       row.className = 'place-row' + (rm ? ' rm' : '');
       if (rm) {
-        // 인라인 경로 모드: 체크박스 행 (자동 경로 탐색)
+        // 인라인 경로 모드: 체크박스 행 (자동 경로 탐색) — 경로 전용 장소는 배지+✕
         row.innerHTML =
           '<input type="checkbox" class="pcheck" data-pcheck="' + p.id + '" checked>' +
           '<div class="pmain">' +
-            '<div class="pname">' + cat.emoji + ' ' + esc(p.name) + ' <span class="cat">' + cat.label + '</span></div>' +
+            '<div class="pname">' + cat.emoji + ' ' + esc(p.name) +
+              (r.extra ? ' <span class="rt-badge">경로 전용</span>' : '') +
+              ' <span class="cat">' + cat.label + '</span></div>' +
             (p.note ? '<div class="pnote">' + esc(p.note) + '</div>' : '') +
             tags +
-          '</div>';
+          '</div>' +
+          (r.extra ? '<button class="rt-del" data-act="rtdel" data-rtid="' + p.id + '" title="경로에서 제거">✕</button>' : '');
       } else {
         row.innerHTML =
           '<span class="pdot" style="background:' + dayColor(r.dayIdx) + '"></span>' +
@@ -279,16 +292,20 @@
     }
 
     const rows = placeRows();
+    let listRows = rows;
+    if (routeModeOn && activeDay > 0) {
+      listRows = rows.concat(routeExtras.map(p => ({ dayIdx: activeDay - 1, pIdx: null, place: p, extra: true })));
+    }
     const listEl = $('#placeList');
     const emptyEl = $('#sheetEmpty');
-    if (!rows.length) {
+    if (!listRows.length) {
       listEl.innerHTML = '';
       listEl.classList.add('hidden');
       emptyEl.classList.remove('hidden');
     } else {
       emptyEl.classList.add('hidden');
       listEl.classList.remove('hidden');
-      await renderRowsInto(listEl, rows, routeModeOn);
+      await renderRowsInto(listEl, listRows, routeModeOn);
     }
 
     // 지도 마커
@@ -671,10 +688,53 @@
     if (!day) return;
     const ids = Array.from(document.querySelectorAll('#placeList .pcheck:checked')).map(c => c.dataset.pcheck);
     $('#rbCount').textContent = ids.length + '곳 선택';
-    const places = day.places.filter(p => ids.indexOf(p.id) >= 0);
+    const places = day.places.filter(p => ids.indexOf(p.id) >= 0)
+      .concat(routeExtras.filter(x => ids.indexOf(x.id) >= 0));
     if (places.length < 2) { hideRoute(); return; }
     routeSelection = { dayIdx: activeDay - 1, placeIds: ids };
     drawDayRoute(places);
+  }
+
+  // 인라인 경로 모드: 일정 외 장소 검색 → 경로 전용으로 추가
+  async function openRoutePicker() {
+    const trip = currentTrip(); if (!trip || activeDay === 0) return;
+    const body =
+      '<div class="field"><input type="text" id="rtQuery" placeholder="예: 오타루 스시, 삿포로 카페"></div>' +
+      '<button id="rtGo" class="btn btn-primary btn-block">🔍 검색</button>' +
+      '<div id="rtResults" style="margin-top:12px"></div>' +
+      '<div class="hint" style="margin-top:10px">선택한 장소는 경로에만 추가돼요 (일정에는 안 들어감). 체크 해제하거나 ✕로 제거할 수 있어요.</div>';
+    showModal('다른 장소 추가 (경로 전용)', body);
+    const q = $('#rtQuery');
+    const run = async () => {
+      const v = (q.value || '').trim();
+      const resEl = $('#rtResults');
+      if (!v) { toast('검색어를 입력해 주세요'); return; }
+      resEl.innerHTML = '<div class="hint">검색 중…</div>';
+      const r = await M.searchText(v, M.getCenter());
+      routePickResults = r.results;
+      if (!r.ok) { resEl.innerHTML = '<div class="empty"><p>검색 실패 (' + esc(r.status) + ')</p></div>'; return; }
+      if (!r.results.length) { resEl.innerHTML = '<div class="empty"><p>결과가 없어요. 검색어를 바꿔 보세요.</p></div>'; return; }
+      resEl.innerHTML = r.results.map((x, i) =>
+        '<div class="sr-row"><div class="sr-main"><div class="sr-name-btn" style="text-decoration:none">' + esc(x.name) + '</div>' +
+        '<div class="sr-meta">' + (x.rating ? '★ ' + x.rating + ' (' + x.reviews + ')' : '') + '<br>' + esc(x.address) + '</div></div>' +
+        '<button class="btn btn-primary" style="min-height:40px;padding:0 12px;font-size:13.5px" data-rtadd="' + i + '">경로에 추가</button></div>'
+      ).join('');
+      resEl.querySelectorAll('[data-rtadd]').forEach(b => b.addEventListener('click', () => {
+        const x = routePickResults[Number(b.dataset.rtadd)];
+        if (!x) return;
+        routeExtras.push({
+          id: 'rt_' + S.uid(), name: x.name,
+          category: (x.name || '').includes('카페') || (x.name || '').toLowerCase().includes('cafe') ? 'cafe' : 'restaurant',
+          lat: x.lat, lng: x.lng, note: x.rating ? '★ ' + x.rating + ' (리뷰 ' + x.reviews + ')' : '', tags: ['경로 전용'], links: {}
+        });
+        b.textContent = '✓ 추가됨';
+        b.disabled = true;
+        refreshDay();
+        scheduleRouteDraw();
+      }));
+    };
+    q.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+    $('#rtGo').addEventListener('click', run);
   }
 
   // 구글 트랜짓 미지원 구간 → 내장 SCHEDULES 참고 교통편 찾기 (양 끝 장소명 기준)
