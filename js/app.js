@@ -123,15 +123,17 @@
       openRouteSelectModal();
     });
 
-    // 경로 패널: 모드 전환 / 닫기
-    $('#routeInfo').addEventListener('click', e => {
+    // 경로 패널: 모드 전환 / 닫기 (지도 오버레이 + 모바일 시트 공용)
+    const routePanelClick = e => {
       if (e.target.closest('#routeClose')) { hideRoute(); return; }
       const seg = e.target.closest('[data-mode]');
       if (seg) {
         routeMode = seg.dataset.mode;
         drawDayRoute();
       }
-    });
+    };
+    $('#routeInfo').addEventListener('click', routePanelClick);
+    $('#sheetRouteInfo').addEventListener('click', routePanelClick);
 
     // 인라인 경로 모드: 체크박스 변경 → 자동 경로, 이동수단/종료
     $('#placeList').addEventListener('change', e => {
@@ -666,6 +668,8 @@
     const bar = $('#routeBar');
     const seg = $('#routeBarSeg');
     bar.classList.toggle('hidden', !routeModeOn);
+    // 모바일: 선택 화면을 전체 높이 바텀시트로
+    $('#sheet').classList.toggle('route-full', routeModeOn && window.matchMedia('(max-width:899px)').matches);
     if (routeModeOn) {
       // 경로 모드에서는 장소 체크박스 목록이 보여야 하므로 시트 mini 강제 해제
       const sheet = $('#sheet');
@@ -767,12 +771,15 @@
 
   function showRoutePanel(active) {
     const el = $('#routeInfo');
-    el.classList.remove('hidden');
+    const mobileFull = routeModeOn && window.matchMedia('(max-width:899px)').matches;
+    const target = mobileFull ? $('#sheetRouteInfo') : el;
+    el.classList.toggle('hidden', mobileFull);
+    target.classList.remove('hidden');
     const seg = '<div class="seg">' + Object.keys(MODE_LABEL).map(m =>
       '<button data-mode="' + m + '" class="' + (routeMode === m ? 'on' : '') + '">' + MODE_LABEL[m] + '</button>').join('') + '</div>';
     const close = '<div style="text-align:right"><button id="routeClose" style="color:var(--muted);font-size:13px">✕ 닫기</button></div>';
-    if (active == null) el.innerHTML = seg + '<div class="hint">경로 계산 중…</div>' + close;
-    else el.innerHTML = seg + active + close;
+    if (active == null) target.innerHTML = seg + '<div class="hint">경로 계산 중…</div>' + close;
+    else target.innerHTML = seg + active + close;
   }
 
   function renderRouteResult(r) {
@@ -823,7 +830,12 @@
     }
   }
 
-  function hideRoute() { $('#routeInfo').classList.add('hidden'); M.clearRoute(); }
+  function hideRoute() {
+    $('#routeInfo').classList.add('hidden');
+    const sri = $('#sheetRouteInfo');
+    if (sri) sri.classList.add('hidden');
+    M.clearRoute();
+  }
 
   /* ================= 이동/시간표 ================= */
   function openTransportModal() {

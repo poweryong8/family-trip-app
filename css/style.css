@@ -61,10 +61,19 @@ button:focus-visible,a:focus-visible,select:focus-visible,[role="button"]:focus-
 }
 #sheet .place-list{flex:1;min-height:0}
 #sheetMini{display:none}
+#sheetRouteInfo{flex:0 1 auto;overflow:auto;max-height:38%;border-top:1px solid var(--line)}
 @media(max-width:899px){
   #sheetMini{display:inline-flex}
   #sheet.mini{height:96px}
   #sheet.mini .place-list,#sheet.mini #sheetEmpty{display:none}
+  /* 모바일 경로 모드: 선택 화면을 전체 높이 바텀시트로 */
+  #sheet.route-full{position:fixed;left:0;right:0;bottom:0;height:84vh;z-index:10;border-radius:18px 18px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.2)}
+  #sheet.route-full .place-list{flex:1;min-height:0}
+  #sheet.route-full #sheetRouteInfo{flex:0 1 auto;max-height:34%;border-top:1px solid var(--line)}
+  #sheet.route-full #sheetRouteInfo .seg{margin:10px 14px 4px}
+  #sheet.route-full #sheetRouteInfo .leg{padding:8px 14px}
+  #sheet.route-full #sheetRouteInfo .hint{padding:0 14px 6px}
+  #sheet.route-full #sheetRouteInfo #routeClose{margin-right:14px}
 }
 .sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px}
 #sheetDayTitle{font-size:18px;font-weight:900;display:flex;align-items:center;gap:8px}
