@@ -45,7 +45,10 @@ window.FTA_DATA = {
       note: '3일차 비에이·후라노 이동은 공식 예약 사이트에서 확인', url: 'https://www.access-n.jp/' },
     { id: 'zoo', match: ['동물원'], emoji: '🚇', line: '지하철 도호선 + 도보',
       info: '오도리 → 마루야마공원 약 10분 · 290엔', hours: '',
-      note: '마루야마공원역 → 동물원 도보 약 10분', url: 'https://www.jrhokkaido.co.jp/' }
+      note: '마루야마공원역 → 동물원 도보 약 10분', url: 'https://www.jrhokkaido.co.jp/' },
+    { id: 'sap-odori', match: ['삿포로역', '오도리'], emoji: '🚇', line: '지하철 난보쿠선',
+      info: '삿포로역 → 오도리역 약 3분 · 210엔', hours: '5:30~23:30 운행',
+      note: '삿포로역(신치토세 공항 방면 JR 도착) → 지하철 난보쿠선 환승이 가장 빠름. 도보는 약 15~20분', url: 'https://www.jrhokkaido.co.jp/' }
   ],
 
   SEED_TRIPS: [

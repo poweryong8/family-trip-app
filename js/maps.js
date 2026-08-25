@@ -184,7 +184,8 @@ window.FTMap = (function () {
     for (let i = 0; i < valid.length - 1; i++) {
       const from = valid[i], to = valid[i + 1];
       const req = { origin: { lat: from.lat, lng: from.lng }, destination: { lat: to.lat, lng: to.lng } };
-      let got = await routeReq(svc, Object.assign({ travelMode: 'TRANSIT' }, req));
+      // TRANSIT은 departure_time 필수 (없으면 ZERO_RESULTS/NOT_FOUND) — 현재 시각 기준 요청
+      let got = await routeReq(svc, Object.assign({ travelMode: 'TRANSIT', transitOptions: { departure_time: new Date() } }, req));
       if (got.status !== 'OK') {
         got = await routeReq(svc, Object.assign({ travelMode: 'WALKING' }, req));
       }
@@ -198,12 +199,11 @@ window.FTMap = (function () {
         out.transit = info.transit;
         out.walkOnly = walkOnly && !walkTooLong;
         out.noTransit = walkTooLong;
-        if (!out.noTransit) {
-          const r = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true,
-            polylineOptions: { strokeColor: color, strokeWeight: 5, strokeOpacity: 0.85 } });
-          r.setDirections(got.res);
-          renderers.push(r);
-        }
+        // 폴백이든 대중교통이든 지도에는 항상 경로를 그려줌 (안내 문구만 다름)
+        const r = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true,
+          polylineOptions: { strokeColor: color, strokeWeight: 5, strokeOpacity: 0.85 } });
+        r.setDirections(got.res);
+        renderers.push(r);
       } else {
         out.noTransit = true;
         out.dur = got.status;
