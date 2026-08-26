@@ -922,39 +922,41 @@
       '&destination=' + leg.toLat + ',' + leg.toLng + '&travelmode=transit" target="_blank" rel="noopener">🚇 Google 지도에서 대중교통 보기</a>';
   }
 
+  // SCHEDULES 참고 교통편 카드 HTML
+  function schedHtml(sched) {
+    return '<div class="tt-sched">' +
+      '<span class="tt-line">' + sched.emoji + ' ' + esc(sched.line) + '</span>' +
+      '<div class="tm">' + esc(sched.info) + '</div>' +
+      (sched.hours ? '<div class="tm">🕐 ' + esc(sched.hours) + '</div>' : '') +
+      (sched.note ? '<div class="tm">💡 ' + esc(sched.note) + '</div>' : '') +
+      '<a class="tp-link" href="' + esc(sched.url) + '" target="_blank" rel="noopener">공식 시간표 · 예약</a>' +
+      '</div>';
+  }
+
   function renderRouteResult(r) {
     if (r.error) { showRoutePanel('경로 계산 실패', '<div style="color:var(--danger)">' + esc(r.error) + '</div>', { expanded: true }); return; }
     if (r.transit) {
       let h = '';
       r.legs.forEach((leg, i) => {
+        const sched = (leg.walkOnly || leg.noTransit) ? findSchedule(leg.from, leg.to) : null;
+        // 메인 시간: SCHEDULES 교통편이 있으면 그 시간을 우선 (도보는 참고로)
+        let head = esc(leg.dur) + (leg.dist ? ' · ' + esc(leg.dist) : '');
+        if (sched) {
+          const tm = (sched.info.match(/약\s*\d+\s*분/) || [])[0];
+          head = sched.emoji + ' ' + esc(sched.line) + (tm ? ' · ' + esc(tm) : '');
+        }
         h += '<div class="leg"><b>' + (i + 1) + '. ' + esc(leg.from) + ' → ' + esc(leg.to) + '</b>' +
-          '<span class="tm">' + esc(leg.dur) + (leg.dist ? ' · ' + esc(leg.dist) : '') + '</span>';
+          '<span class="tm">' + head + '</span>';
         if (leg.noTransit) {
           h += '<div class="tt-note">🚌 대중교통 정보 없음(구글 미지원 구간) — 참고 교통편:</div>';
-          const sched = findSchedule(leg.from, leg.to);
-          if (sched) {
-            h += '<div class="tt-sched">' +
-              '<span class="tt-line">' + sched.emoji + ' ' + esc(sched.line) + '</span>' +
-              '<div class="tm">' + esc(sched.info) + '</div>' +
-              (sched.hours ? '<div class="tm">🕐 ' + esc(sched.hours) + '</div>' : '') +
-              (sched.note ? '<div class="tm">💡 ' + esc(sched.note) + '</div>' : '') +
-              '<a class="tp-link" href="' + esc(sched.url) + '" target="_blank" rel="noopener">공식 시간표 · 예약</a>' +
-              '</div>';
-          } else {
-            h += '<div class="tt-note">— [이동] 탭의 공식 사이트에서 확인해 주세요</div>';
-          }
+          h += sched ? schedHtml(sched) : '<div class="tt-note">— [이동] 탭의 공식 사이트에서 확인해 주세요</div>';
           h += gmapsTransitLink(leg);
         } else if (leg.walkOnly) {
-          h += '<div class="tt-note">🚶 도보 이동 (대중교통 구간 없음)</div>';
-          const sched = findSchedule(leg.from, leg.to);
           if (sched) {
-            h += '<div class="tt-sched">' +
-              '<span class="tt-line">' + sched.emoji + ' ' + esc(sched.line) + '</span>' +
-              '<div class="tm">' + esc(sched.info) + '</div>' +
-              (sched.hours ? '<div class="tm">🕐 ' + esc(sched.hours) + '</div>' : '') +
-              (sched.note ? '<div class="tm">💡 ' + esc(sched.note) + '</div>' : '') +
-              '<a class="tp-link" href="' + esc(sched.url) + '" target="_blank" rel="noopener">공식 시간표 · 예약</a>' +
-              '</div>';
+            h += schedHtml(sched);
+            h += '<div class="tt-note">🚶 도보로도 이동 가능 (' + esc(leg.dur) + ')</div>';
+          } else {
+            h += '<div class="tt-note">🚶 도보 이동 (대중교통 구간 없음)</div>';
           }
           h += gmapsTransitLink(leg);
         } else {
