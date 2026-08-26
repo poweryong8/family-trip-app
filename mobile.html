@@ -19,7 +19,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/mobile.css?v=m3">
+<link rel="stylesheet" href="css/mobile.css?v=m4">
 </head>
 <body>
 <div id="app">
@@ -39,6 +39,16 @@
     <div id="mapView">
       <div id="map"></div>
       <div id="routeInfo" class="hidden"></div>
+      <!-- 지도 탭: 위치에 장소 추가 / 위치 선택 모드 배너 -->
+      <div id="mapAddBar" class="map-bar hidden">
+        <span>📍 이 위치에 장소 추가</span>
+        <button id="mapAddOk" type="button">추가</button>
+        <button id="mapAddCancel" type="button" aria-label="취소">✕</button>
+      </div>
+      <div id="mapPickBar" class="map-bar hidden">
+        <span id="mapPickMsg">지도를 눌러 위치를 지정하세요</span>
+        <button id="mapPickCancel" type="button" aria-label="취소">✕</button>
+      </div>
       <div id="fabStack">
         <button id="btnRoute" class="fab" type="button" title="경로">🚗<span>경로</span></button>
         <button id="btnNearby" class="fab" type="button" title="주변 맛집">🍜<span>맛집</span></button>
@@ -94,11 +104,11 @@
 <input type="file" id="photoInput" accept="image/*" multiple class="hidden">
 <input type="file" id="importInput" accept="application/json,.json" class="hidden">
 
-<script src="js/config.js?v=m3"></script>
-<script src="js/data.js?v=m3"></script>
-<script src="js/storage.js?v=m3"></script>
-<script src="js/maps.js?v=m3"></script>
-<script src="js/report.js?v=m3"></script>
-<script src="js/mobile.js?v=m3"></script>
+<script src="js/config.js?v=m4"></script>
+<script src="js/data.js?v=m4"></script>
+<script src="js/storage.js?v=m4"></script>
+<script src="js/maps.js?v=m4"></script>
+<script src="js/report.js?v=m4"></script>
+<script src="js/mobile.js?v=m4"></script>
 </body>
 </html>

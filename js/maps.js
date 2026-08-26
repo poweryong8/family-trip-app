@@ -35,6 +35,11 @@ window.FTMap = (function () {
       streetViewControl: false
     });
     info = new google.maps.InfoWindow();
+    // 지도 빈 곳 탭 → 좌표 이벤트 (모바일: 장소 추가/위치 선택용)
+    map.addListener('click', e => {
+      if (!e.latLng) return;
+      window.dispatchEvent(new CustomEvent('ftmapclick', { detail: { lat: e.latLng.lat(), lng: e.latLng.lng() } }));
+    });
     window.dispatchEvent(new CustomEvent('ftmapsready'));
   }
 

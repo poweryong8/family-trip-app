@@ -17,6 +17,7 @@
   let lightboxCtx = null;
   let toastTimer = null;
   let lastSearchResults = [];
+  let pickMode = false;       // 지도 탭 위치 선택 모드 (장소 추가 좌표 지정)
 
   // 바텀시트 상태
   const SHEET_PEEK = 118;   // 일반 접힘 높이
@@ -57,6 +58,17 @@
     $('#btnSettings').addEventListener('click', () => switchTab('more'));
     $('#tripBtn').addEventListener('click', openTripModal);
     $('#btnAddPlace').addEventListener('click', () => openPlaceModal(null));
+    // 지도 탭 → 장소 추가 배너 / 위치 선택 모드
+    window.addEventListener('ftmapclick', onMapClick);
+    $('#mapAddOk').addEventListener('click', () => {
+      const bar = $('#mapAddBar');
+      const lat = parseFloat(bar.dataset.lat), lng = parseFloat(bar.dataset.lng);
+      bar.classList.add('hidden');
+      if (isNaN(lat) || isNaN(lng)) return;
+      openPlaceModal(null, { lat, lng });
+    });
+    $('#mapAddCancel').addEventListener('click', () => $('#mapAddBar').classList.add('hidden'));
+    $('#mapPickCancel').addEventListener('click', () => { pickMode = false; $('#mapPickBar').classList.add('hidden'); });
     $('#btnEmptySearch').addEventListener('click', () => openSearchModal('search'));
     $('#btnSearch').addEventListener('click', () => openSearchModal('search'));
     $('#btnNearby').addEventListener('click', () => openSearchModal('nearby'));
@@ -397,28 +409,85 @@
   }
 
   /* ================= 장소 추가/수정/삭제 ================= */
-  function openPlaceModal(ctx) {
+  // 지도 빈 곳 탭: 위치 선택 모드면 좌표로 모달 재오픈, 아니면 '여기에 장소 추가' 배너
+  function onMapClick(ev) {
+    const { lat, lng } = ev.detail;
+    if (pickMode) {
+      pickMode = false;
+      $('#mapPickBar').classList.add('hidden');
+      openPlaceModal(null, { lat, lng });
+      return;
+    }
+    if (routeModeOn) return; // 경로 모드: 마커 탭으로 출발/도착 지정
+    const bar = $('#mapAddBar');
+    bar.dataset.lat = lat;
+    bar.dataset.lng = lng;
+    bar.classList.remove('hidden');
+  }
+
+  function openPlaceModal(ctx, preset) {
     const trip = currentTrip(); if (!trip) return;
     let dayIdx = 0, pIdx = null, p = null;
+    preset = preset || {};
     if (ctx) { dayIdx = ctx.dayIdx; pIdx = ctx.pIdx; p = trip.days[dayIdx].places[pIdx]; }
     const catOpts = Object.keys(D.CATEGORIES).map(k =>
       '<option value="' + k + '"' + (p && p.category === k ? ' selected' : '') + '>' + D.CATEGORIES[k].emoji + ' ' + D.CATEGORIES[k].label + '</option>').join('');
+    const lat0 = p ? p.lat : (preset.lat != null ? preset.lat : '');
+    const lng0 = p ? p.lng : (preset.lng != null ? preset.lng : '');
     const body =
       '<div class="field"><label>이름</label><input type="text" id="pmName" placeholder="예: 오타루 운하" value="' + esc(p ? p.name : '') + '"></div>' +
       '<div class="field"><label>종류</label><select id="pmCat">' + catOpts + '</select></div>' +
-      '<div class="field"><div style="display:flex;gap:8px"><div style="flex:1"><label>위도</label><input type="text" id="pmLat" value="' + (p ? p.lat : '') + '" inputmode="decimal"></div>' +
-      '<div style="flex:1"><label>경도</label><input type="text" id="pmLng" value="' + (p ? p.lng : '') + '" inputmode="decimal"></div></div>' +
-      '<div class="hint">위치를 모르면 지도에서 마커를 클릭해 수정하거나, 검색 기능으로 추가하세요.</div></div>' +
+      '<div class="field"><label>📍 위치 지정</label>' +
+      '<div style="display:flex;gap:6px">' +
+      '<input type="text" id="pmLoc" placeholder="이름으로 검색: 예) 오타루 운하, 삿포로역" style="flex:1">' +
+      '<button id="pmLocGo" class="btn btn-ghost" style="flex:0 0 auto;min-height:42px" type="button">검색</button>' +
+      '</div>' +
+      '<div id="pmLocRes"></div>' +
+      '<button id="pmMapPick" class="btn btn-ghost btn-block" type="button">🗺️ 지도에서 선택</button>' +
+      '<div class="hint">검색으로 찾거나 지도에서 직접 누르면 위도/경도가 자동 입력돼요.</div></div>' +
+      '<div class="field"><div style="display:flex;gap:8px"><div style="flex:1"><label>위도</label><input type="text" id="pmLat" value="' + lat0 + '" inputmode="decimal"></div>' +
+      '<div style="flex:1"><label>경도</label><input type="text" id="pmLng" value="' + lng0 + '" inputmode="decimal"></div></div>' +
+      '<div class="hint">위치를 모르면 위 검색/지도 선택을 이용하세요.</div></div>' +
       '<div class="field"><label>메모</label><textarea id="pmNote" placeholder="운영시간, 예약, 아이 팁 등">' + esc(p ? p.note : '') + '</textarea></div>' +
       '<div class="field"><label>태그 (쉼표 구분)</label><input type="text" id="pmTags" placeholder="아이 좋아함, 야경" value="' + esc(p && p.tags ? p.tags.join(', ') : '') + '"></div>' +
       '<div class="field"><label>공식 사이트 (선택)</label><input type="text" id="pmLink" placeholder="https://..." value="' + esc(p && p.links ? (p.links.official || '') : '') + '"></div>' +
       '<button id="pmSave" class="btn btn-primary btn-block">' + (p ? '저장' : '일정에 추가') + '</button>';
     showModal(p ? '장소 수정' : '장소 추가', body);
+    // 위치 검색 → 위도/경도 자동 입력
+    $('#pmLocGo').addEventListener('click', async () => {
+      const v = $('#pmLoc').value.trim();
+      if (!v) { toast('검색어를 입력해 주세요'); return; }
+      const res = $('#pmLocRes');
+      res.innerHTML = '<div class="hint">검색 중…</div>';
+      const r = await M.searchText(v, M.getCenter());
+      if (!r.ok || !r.results.length) { res.innerHTML = '<div class="hint">결과가 없어요. 검색어를 바꿔 보세요.</div>'; return; }
+      res.innerHTML = r.results.slice(0, 5).map((x, i) =>
+        '<button class="sr-row" style="width:100%;text-align:left" data-pmloc="' + i + '" type="button">' +
+        '<div class="sr-main"><div class="sr-name-btn">' + esc(x.name) + '</div>' +
+        '<div class="sr-meta">' + (x.rating ? '★ ' + x.rating : '') + ' · ' + esc((x.address || '').slice(0, 40)) + '</div></div></button>'
+      ).join('');
+      res.querySelectorAll('[data-pmloc]').forEach(b => b.addEventListener('click', () => {
+        const x = r.results[Number(b.dataset.pmloc)];
+        $('#pmLat').value = x.lat;
+        $('#pmLng').value = x.lng;
+        if (!$('#pmName').value.trim()) $('#pmName').value = x.name;
+        res.innerHTML = '<div class="hint">✓ 위치 지정됨: ' + esc(x.name) + '</div>';
+        toast('위치가 지정됐어요');
+      }));
+    });
+    // 지도에서 선택 → 지도 탭 모드
+    $('#pmMapPick').addEventListener('click', () => {
+      closeModal();
+      pickMode = true;
+      $('#mapPickMsg').textContent = '지도를 눌러 위치를 지정하세요';
+      $('#mapPickBar').classList.remove('hidden');
+      toast('지도를 눌러 위치를 지정하세요');
+    });
     $('#pmSave').addEventListener('click', () => {
       const name = $('#pmName').value.trim();
       if (!name) { toast('이름을 입력해 주세요'); return; }
       const lat = parseFloat($('#pmLat').value), lng = parseFloat($('#pmLng').value);
-      if (isNaN(lat) || isNaN(lng)) { toast('위도/경도를 확인해 주세요 (숫자)'); return; }
+      if (isNaN(lat) || isNaN(lng)) { toast('위도/경도를 확인해 주세요 (검색 또는 지도 선택 이용)'); return; }
       const place = {
         id: p ? p.id : S.uid(),
         name: name,
