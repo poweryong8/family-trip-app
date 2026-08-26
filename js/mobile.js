@@ -10,6 +10,8 @@
   let routeMode = 'DRIVING';
   let routePick = null;       // { originId, destId }
   let routePickResults = [];  // 경로 모달 '다른 장소' 검색 결과
+  let routePanelExpanded = false; // 경로 카드 구간 상세 펼침
+  let lastRoutePanel = null;      // { summary, detail }
   let mapsReady = false;
   let pendingPhoto = null;
   let lightboxCtx = null;
@@ -113,6 +115,7 @@
     // 경로 패널 (지도 상단 카드 + 시트 내부 공용)
     const routePanelClick = e => {
       if (e.target.closest('#routeClose')) { hideRoute(); return; }
+      if (e.target.closest('[data-rptoggle]')) { routePanelExpanded = !routePanelExpanded; renderRoutePanel(); return; }
       const seg = e.target.closest('[data-mode]');
       if (seg) setRouteMode(seg.dataset.mode);
     };
@@ -743,6 +746,7 @@
   function setRouteMode(m) {
     routeMode = m;
     document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+    if (!routeModeOn && activeDay === 0) { drawAllDays(); return; }
     redrawPicked();
   }
 
@@ -759,7 +763,8 @@
 
   function drawRouteBetween(op, dp) {
     if (!M.isReady()) { toast('지도를 기다리는 중이에요'); return; }
-    showRoutePanel(null);
+    routePanelExpanded = false; // 새 경로는 접힌 요약줄로 (지도 확보)
+    showRoutePanel(null, null);
     const color = dayColor(activeDay - 1);
     let guard = setTimeout(() => renderRouteResult({ error: '경로 계산이 오래 걸리고 있어요. 네트워크를 확인하고 다시 시도해 주세요.' }), 20000);
     const finish = (r) => { clearTimeout(guard); renderRouteResult(r); };
@@ -830,21 +835,34 @@
     return bestScore >= 1 ? best : null;
   }
 
-  function showRoutePanel(active) {
+  function showRoutePanel(summary, detail, opts) {
+    lastRoutePanel = { summary: summary || null, detail: detail || null };
+    if (opts && opts.expanded) routePanelExpanded = true;
+    renderRoutePanel();
+  }
+
+  // 지도 상단 경로 카드: 기본 접힘 요약줄 (지도를 가리지 않게) + 탭하면 구간 상세
+  function renderRoutePanel() {
     const el = $('#routeInfo');
-    const sri = $('#sheetRouteInfo');
-    sri.classList.add('hidden');
+    $('#sheetRouteInfo').classList.add('hidden');
+    if (!lastRoutePanel) return;
     el.classList.remove('hidden');
-    const target = el;
-    const seg = '<div class="seg">' + Object.keys(MODE_LABEL).map(m =>
+    const seg = routeModeOn ? '' : '<div class="seg">' + Object.keys(MODE_LABEL).map(m =>
       '<button data-mode="' + m + '" class="' + (routeMode === m ? 'on' : '') + '">' + MODE_LABEL[m] + '</button>').join('') + '</div>';
     const close = '<div style="text-align:right;margin-top:4px"><button id="routeClose" style="color:var(--muted);font-size:13px;padding:6px">✕ 닫기</button></div>';
-    if (active == null) target.innerHTML = seg + '<div class="hint">경로 계산 중…</div>' + close;
-    else target.innerHTML = seg + active + close;
+    const { summary, detail } = lastRoutePanel;
+    if (!detail) {
+      el.innerHTML = seg + '<div class="rp-detail"><div class="hint">경로 계산 중…</div></div>' + close;
+      return;
+    }
+    const toggle = '<button class="rp-toggle" data-rptoggle type="button">' + (routePanelExpanded ? '접기 ▴' : '구간 보기 ▾') + '</button>';
+    el.innerHTML = seg +
+      '<div class="rp-summary" data-rptoggle><b>' + esc(summary || '경로 정보') + '</b>' + toggle + '</div>' +
+      '<div class="rp-detail' + (routePanelExpanded ? '' : ' hidden') + '">' + detail + '</div>' + close;
   }
 
   function renderRouteResult(r) {
-    if (r.error) { showRoutePanel('<div style="color:var(--danger)">' + esc(r.error) + '</div>'); return; }
+    if (r.error) { showRoutePanel('경로 계산 실패', '<div style="color:var(--danger)">' + esc(r.error) + '</div>', { expanded: true }); return; }
     if (r.transit) {
       let h = '';
       r.legs.forEach((leg, i) => {
@@ -878,20 +896,20 @@
         }
         h += '</div>';
       });
-      showRoutePanel(h);
+      showRoutePanel('대중교통 · ' + r.legs.length + '개 구간', h);
     } else {
-      let h = '<div class="leg" style="border-top:none"><b>전체 ' + esc(r.dist) + 'km · 약 ' + esc(r.time) + '분</b></div>';
+      let h = '';
       r.legs.forEach((leg, i) => {
         h += '<div class="leg"><b>' + (i + 1) + '. ' + esc(leg.from) + ' → ' + esc(leg.to) + '</b>' +
           '<span class="tm">' + esc(leg.dur) + ' · ' + esc(leg.dist) + '</span>' +
           (leg.line ? '<div><span class="line">' + esc(leg.vehicle === 'BUS' ? '🚌' : '🚄') + ' ' + esc(leg.line) + '</span></div>' : '') +
           '</div>';
       });
-      showRoutePanel(h);
+      showRoutePanel('전체 ' + esc(r.dist) + 'km · 약 ' + esc(r.time) + '분', h);
     }
   }
 
-  // 전체 보기: 일자별 동선을 색으로 한 지도에 표시
+  // 전체 보기: 일자별 동선을 색으로 한 지도에 표시 (카드는 접힌 요약으로)
   async function drawAllDays() {
     const trip = currentTrip(); if (!trip) return;
     if (!M.isReady()) { toast('지도를 기다리는 중이에요'); return; }
@@ -899,18 +917,13 @@
       .filter(x => x.d.places.filter(p => isFinite(p.lat) && isFinite(p.lng)).length >= 2);
     if (!days.length) { toast('경로를 보려면 장소가 2개 이상인 일자가 필요해요'); return; }
     M.clearRoute();
-    showRoutePanel(null);
-    const el = $('#routeInfo');
-    const hint = el.querySelector('.hint');
-    hint.textContent = '일자별 동선 계산 중…';
     const mode = routeMode;
+    const lines = [];
     let done = 0;
     for (const { d, i } of days) {
       const places = d.places.filter(p => isFinite(p.lat) && isFinite(p.lng));
-      const line = document.createElement('div');
-      line.className = 'leg';
-      line.innerHTML = '<b>' + (i + 1) + '일차 · ' + esc(d.title) + '</b> <span class="tm">계산 중…</span>';
-      hint.insertAdjacentElement('beforebegin', line);
+      lines.push('<div class="leg"><b>' + (i + 1) + '일차 · ' + esc(d.title) + '</b> <span class="tm">계산 중…</span></div>');
+      showRoutePanel('전체 동선 계산 중 (' + (i + 1) + '/' + days.length + ')…', lines.join(''), { expanded: true });
       let res = null;
       try {
         res = await new Promise(cb => {
@@ -918,18 +931,21 @@
           else M.drawRoute(places, mode, dayColor(i), cb, { keep: true });
         });
       } catch (e) { res = { error: e.message }; }
-      const tm = line.querySelector('.tm');
-      if (!res || res.error) tm.textContent = res && res.error ? '실패 (' + res.error + ')' : '실패';
-      else if (res.transit) tm.textContent = '구간 ' + res.legs.length + '개';
-      else tm.textContent = res.dist + 'km · 약 ' + res.time + '분';
+      let status;
+      if (!res || res.error) status = res && res.error ? '실패 (' + esc(res.error) + ')' : '실패';
+      else if (res.transit) status = '구간 ' + res.legs.length + '개';
+      else status = res.dist + 'km · 약 ' + res.time + '분';
+      lines[lines.length - 1] = lines[lines.length - 1].replace('계산 중…', status);
       done++;
     }
-    hint.textContent = '전체 동선 완료 — ' + done + '개 일자 · 색상은 일자별';
+    routePanelExpanded = false;
+    showRoutePanel('전체 동선 완료 — ' + done + '개 일자 · 색상은 일자별', lines.join(''));
   }
 
   function hideRoute() {
     $('#routeInfo').classList.add('hidden');
     $('#sheetRouteInfo').classList.add('hidden');
+    lastRoutePanel = null;
     M.clearRoute();
   }
 
