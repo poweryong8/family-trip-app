@@ -45,7 +45,7 @@
       S.setActiveTrip(e.target.value);
       activeDay = 0;
       routeSelection = null;
-      routeExtras = [];
+      routeExtras = loadDayExtras();
       routeModeOn = false;
       hideRoute();
       applyRouteMode();
@@ -56,7 +56,7 @@
       const b = e.target.closest('.day-tab'); if (!b) return;
       activeDay = Number(b.dataset.day);
       routeSelection = null;
-      routeExtras = [];
+      routeExtras = loadDayExtras();
       hideRoute();
       renderTabs();
       refreshDay();
@@ -104,6 +104,7 @@
       else if (act === 'del') deletePlace(dayIdx, pIdx);
       else if (act === 'rtdel') {
         routeExtras = routeExtras.filter(x => x.id !== btn.dataset.rtid);
+        persistExtras();
         refreshDay();
         scheduleRouteDraw();
       }
@@ -150,7 +151,6 @@
       if (e.target.closest('#rbAdd')) { openRoutePicker(); return; }
       if (e.target.closest('#rbExit')) {
         routeModeOn = false;
-        routeExtras = [];
         applyRouteMode();
       }
     });
@@ -173,6 +173,20 @@
 
   /* ================= 렌더링 ================= */
   function currentTrip() { return S.activeTrip(); }
+
+  // 경로 전용 장소: 일자 데이터에 저장 (리프레시 후 유지, 모바일과 공유)
+  function loadDayExtras() {
+    const trip = currentTrip();
+    const d = (trip && activeDay > 0) ? trip.days[activeDay - 1] : null;
+    return (d && Array.isArray(d.routeExtras)) ? d.routeExtras : [];
+  }
+  function persistExtras() {
+    const trip = currentTrip();
+    const d = (trip && activeDay > 0) ? trip.days[activeDay - 1] : null;
+    if (!d) return;
+    d.routeExtras = routeExtras;
+    S.saveTrip(trip);
+  }
 
   function renderTrips() {
     const st = S.getState();
@@ -598,6 +612,7 @@
         category: (x.name || '').includes('카페') || (x.name || '').toLowerCase().includes('cafe') ? 'cafe' : 'restaurant',
         lat: x.lat, lng: x.lng, note: x.rating ? '★ ' + x.rating + ' (리뷰 ' + x.reviews + ')' : '', tags: ['경로 전용'], links: {}
       });
+      persistExtras();
       renderRouteModalList(day);
       b.textContent = '✓ 추가됨';
       b.disabled = true;
@@ -740,6 +755,7 @@
           category: (x.name || '').includes('카페') || (x.name || '').toLowerCase().includes('cafe') ? 'cafe' : 'restaurant',
           lat: x.lat, lng: x.lng, note: x.rating ? '★ ' + x.rating + ' (리뷰 ' + x.reviews + ')' : '', tags: ['경로 전용'], links: {}
         });
+        persistExtras();
         b.textContent = '✓ 추가됨';
         b.disabled = true;
         refreshDay();

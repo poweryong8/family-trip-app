@@ -39,7 +39,19 @@ window.FTMap = (function () {
   }
 
   /* ---------- 마커 ---------- */
-  function pinIcon(dayColor, emoji) {
+  function pinIcon(dayColor, emoji, flag) {
+    // 출발(A)/도착(B) 선택 마커: 알파벳 원형 핀
+    if (flag) {
+      const col = flag === 'A' ? '#2F6D80' : '#C0453E';
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">' +
+        '<circle cx="22" cy="22" r="20" fill="' + col + '" stroke="#fff" stroke-width="3"/>' +
+        '<text x="22" y="30" font-size="20" font-weight="bold" text-anchor="middle" fill="#fff">' + flag + '</text></svg>';
+      return {
+        url: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
+        scaledSize: new google.maps.Size(40, 40),
+        anchor: new google.maps.Point(20, 20)
+      };
+    }
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="46" height="58" viewBox="0 0 46 58">' +
       '<path d="M23 1C11.4 1 2 10.4 2 22c0 16.2 21 35 21 35s21-18.8 21-35C44 10.4 34.6 1 23 1z" fill="' + dayColor + '" stroke="#fff" stroke-width="2.5"/>' +
       '<text x="23" y="33" font-size="22" text-anchor="middle">' + emoji + '</text></svg>';
@@ -66,7 +78,7 @@ window.FTMap = (function () {
       const m = new google.maps.Marker({
         position: { lat: p.lat, lng: p.lng },
         map: map,
-        icon: pinIcon(color, cat.emoji),
+        icon: pinIcon(color, cat.emoji, it.flag),
         title: p.name
       });
       m.addListener('click', () => {
@@ -184,8 +196,8 @@ window.FTMap = (function () {
     for (let i = 0; i < valid.length - 1; i++) {
       const from = valid[i], to = valid[i + 1];
       const req = { origin: { lat: from.lat, lng: from.lng }, destination: { lat: to.lat, lng: to.lng } };
-      // TRANSIT은 departure_time 필수 (없으면 ZERO_RESULTS/NOT_FOUND) — 현재 시각 기준 요청
-      let got = await routeReq(svc, Object.assign({ travelMode: 'TRANSIT', transitOptions: { departure_time: new Date() } }, req));
+      // TRANSIT은 departureTime 필수 (없으면 ZERO_RESULTS/NOT_FOUND) — 현재 시각 기준 요청
+      let got = await routeReq(svc, Object.assign({ travelMode: 'TRANSIT', transitOptions: { departureTime: new Date() } }, req));
       if (got.status !== 'OK') {
         got = await routeReq(svc, Object.assign({ travelMode: 'WALKING' }, req));
       }

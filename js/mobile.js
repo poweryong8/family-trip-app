@@ -6,12 +6,10 @@
 
   let activeDay = 0;          // 0=전체, 1..n=일차
   let tab = 'map';            // 'map' | 'list' | 'move' | 'more'
-  let routeModeOn = false;    // 인라인 경로 모드 (시트 전체 + 체크박스)
+  let routeModeOn = false;    // 경로 모드 (출발지·도착지 선택)
   let routeMode = 'DRIVING';
-  let routeSelection = null;  // { dayIdx, placeIds }
-  let routeExtras = [];       // 경로 전용 장소
+  let routePick = null;       // { originId, destId }
   let routePickResults = [];  // 경로 모달 '다른 장소' 검색 결과
-  let routeDrawTimer = null;
   let mapsReady = false;
   let pendingPhoto = null;
   let lightboxCtx = null;
@@ -19,9 +17,9 @@
   let lastSearchResults = [];
 
   // 바텀시트 상태
-  const SHEET_PEEK = 118;
+  const SHEET_PEEK = 118;   // 일반 접힘 높이
+  const ROUTE_PEEK = 236;   // 경로 모드 접힘 높이 (출발/도착 바 포함)
   let sheetState = 'half';    // 'peek' | 'half' | 'full'
-  let sheetLocked = false;    // 경로 모드: 전체 고정
   let drag = null;            // 시트 드래그 중 상태
 
   const MODE_LABEL = { DRIVING: '🚗 차', TRANSIT: '🚌 대중교통', WALKING: '🚶 도보' };
@@ -69,19 +67,22 @@
     $('#dayChips').addEventListener('click', e => {
       const b = e.target.closest('.day-chip'); if (!b) return;
       activeDay = Number(b.dataset.day);
-      routeSelection = null;
-      routeExtras = [];
-      if (activeDay === 0 && routeModeOn) exitRouteMode();
+      if (routeModeOn) {
+        if (activeDay === 0) exitRouteMode();
+        else { routePick = { originId: null, destId: null }; hideRoute(); }
+      }
       hideRoute();
       renderChips();
       refreshDay();
       if (tab === 'move') renderMove();
-      if (routeModeOn) scheduleRouteDraw();
+      if (routeModeOn) renderRoutePickBar();
     });
 
     function onPlaceListClick(e) {
       const thumb = e.target.closest('.thumb');
       if (thumb) { openLightbox(thumb.dataset.place, thumb.dataset.ph); return; }
+      const pk = e.target.closest('[data-pick]');
+      if (pk && routeModeOn) { tapEndpoint(pk.dataset.pick); return; }
       const btn = e.target.closest('[data-act]');
       if (!btn) return;
       const dayIdx = Number(btn.dataset.day);
@@ -91,9 +92,8 @@
       else if (act === 'edit') openPlaceModal({ dayIdx, pIdx });
       else if (act === 'del') deletePlace(dayIdx, pIdx);
       else if (act === 'rtdel') {
-        routeExtras = routeExtras.filter(x => x.id !== btn.dataset.rtid);
+        removeExtra(btn.dataset.rtid);
         refreshDay();
-        scheduleRouteDraw();
       }
     }
     $('#placeList').addEventListener('click', onPlaceListClick);
@@ -103,7 +103,6 @@
       if (!rb) return;
       const di = Number(rb.dataset.itroute);
       activeDay = di + 1;
-      routeSelection = null;
       hideRoute();
       renderChips();
       refreshDay();
@@ -111,30 +110,24 @@
       enterRouteMode();
     });
 
-    // 인라인 경로 모드: 체크박스 → 자동 경로
-    $('#placeList').addEventListener('change', e => {
-      if (e.target.classList.contains('pcheck')) scheduleRouteDraw();
-    });
-
     // 경로 패널 (지도 상단 카드 + 시트 내부 공용)
     const routePanelClick = e => {
       if (e.target.closest('#routeClose')) { hideRoute(); return; }
       const seg = e.target.closest('[data-mode]');
-      if (seg) { routeMode = seg.dataset.mode; drawDayRoute(); }
+      if (seg) setRouteMode(seg.dataset.mode);
     };
     $('#routeInfo').addEventListener('click', routePanelClick);
     $('#sheetRouteInfo').addEventListener('click', routePanelClick);
 
     $('#routeBar').addEventListener('click', e => {
       const seg = e.target.closest('[data-mode]');
-      if (seg) {
-        routeMode = seg.dataset.mode;
-        document.querySelectorAll('#routeBarSeg [data-mode]').forEach(b => b.classList.toggle('on', b === seg));
-        scheduleRouteDraw();
-        return;
-      }
+      if (seg) { setRouteMode(seg.dataset.mode); return; }
       if (e.target.closest('#rbAdd')) { openRoutePicker(); return; }
-      if (e.target.closest('#rbExit')) { exitRouteMode(); }
+      if (e.target.closest('#rbExit')) { exitRouteMode(); return; }
+      const clr = e.target.closest('[data-pickclear]');
+      if (clr) { clearEndpoint(clr.dataset.pickclear); return; }
+      const pkb = e.target.closest('[data-pickbtn]');
+      if (pkb) { openPickModal(pkb.dataset.pickbtn); return; }
     });
 
     // 모달 공통 (검색/상세/오버레이)
@@ -192,7 +185,6 @@
     // 바텀시트 드래그 (pointer events)
     const grip = $('#sheetGrip');
     grip.addEventListener('pointerdown', e => {
-      if (sheetLocked) return;
       drag = { y: e.clientY, h: $('#sheet').offsetHeight, moved: false };
       $('#sheet').classList.add('dragging');
       grip.setPointerCapture(e.pointerId);
@@ -281,12 +273,15 @@
         : '';
       const tags = (p.tags || []).map(t => '<span class="tag">#' + esc(t) + '</span>').join('');
       const row = document.createElement('div');
-      row.className = 'place-row' + (rm ? ' rm' : '');
+      row.className = 'place-row' + (rm ? ' rm' : '') +
+        (rm && routePick && routePick.originId === p.id ? ' pick-origin' : '') +
+        (rm && routePick && routePick.destId === p.id ? ' pick-dest' : '');
       if (rm) {
+        const badge = routePick && routePick.originId === p.id ? '<span class="pick-badge origin">🚩 출발</span>'
+          : routePick && routePick.destId === p.id ? '<span class="pick-badge dest">🏁 도착</span>' : '';
         row.innerHTML =
-          '<input type="checkbox" class="pcheck" data-pcheck="' + p.id + '" checked>' +
-          '<div class="pmain">' +
-            '<div class="pname">' + cat.emoji + ' ' + esc(p.name) +
+          '<div class="pmain" data-pick="' + p.id + '">' +
+            '<div class="pname">' + cat.emoji + ' ' + esc(p.name) + badge +
               (r.extra ? ' <span class="rt-badge">경로 전용</span>' : '') +
               ' <span class="cat">' + cat.label + '</span></div>' +
             (p.note ? '<div class="pnote">' + esc(p.note) + '</div>' : '') +
@@ -326,7 +321,7 @@
     const rows = placeRows();
     let listRows = rows;
     if (routeModeOn && activeDay > 0) {
-      listRows = rows.concat(routeExtras.map(p => ({ dayIdx: activeDay - 1, pIdx: null, place: p, extra: true })));
+      listRows = rows.concat(dayExtras().map(p => ({ dayIdx: activeDay - 1, pIdx: null, place: p, extra: true })));
     }
     const listEl = $('#placeList');
     const emptyEl = $('#sheetEmpty');
@@ -341,8 +336,15 @@
     }
 
     if (mapsReady) {
-      const items = rows.map(r => ({ place: r.place, color: dayColor(r.dayIdx) }));
-      M.setMarkers(items, p => { const hit = rows.find(r => r.place.id === p.id); if (hit) openPlaceModal({ dayIdx: hit.dayIdx, pIdx: hit.pIdx }); });
+      const items = rows.map(r => ({
+        place: r.place, color: dayColor(r.dayIdx),
+        flag: routePick && routePick.originId === r.place.id ? 'A' : (routePick && routePick.destId === r.place.id ? 'B' : null)
+      }));
+      M.setMarkers(items, p => {
+        const hit = rows.find(r => r.place.id === p.id); if (!hit) return;
+        if (routeModeOn) tapEndpoint(p.id);
+        else openPlaceModal({ dayIdx: hit.dayIdx, pIdx: hit.pIdx });
+      });
       M.fitBounds(rows.map(r => ({ lat: r.place.lat, lng: r.place.lng })));
     }
 
@@ -379,7 +381,8 @@
   /* ================= 바텀시트 ================= */
   function setSheet(state, opts) {
     opts = opts || {};
-    const h = state === 'peek' ? SHEET_PEEK + 'px' : state === 'half' ? '45vh' : '100%';
+    const peek = routeModeOn ? ROUTE_PEEK : SHEET_PEEK;
+    const h = state === 'peek' ? peek + 'px' : state === 'half' ? '45vh' : '100%';
     const sheet = $('#sheet');
     if (!opts.instant) sheet.classList.remove('dragging');
     sheet.style.height = h;
@@ -589,8 +592,8 @@
     document.querySelectorAll('#modalRoot [data-trip]').forEach(b => b.addEventListener('click', () => {
       S.setActiveTrip(b.dataset.trip);
       activeDay = 0;
-      routeSelection = null;
-      routeExtras = [];
+      routePick = null;
+      if (routeModeOn) exitRouteMode();
       hideRoute();
       renderTripName();
       renderChips();
@@ -604,9 +607,8 @@
 
   function afterTripChange() {
     activeDay = 0;
-    routeSelection = null;
-    routeExtras = [];
-    exitRouteMode();
+    routePick = null;
+    if (routeModeOn) exitRouteMode();
     renderTripName();
     renderChips();
     refreshDay();
@@ -614,20 +616,43 @@
     if (tab === 'more') renderMore();
   }
 
-  /* ================= 경로 ================= */
+  /* ================= 경로 (출발지·도착지 선택) ================= */
+  function dayObj() {
+    const t = currentTrip();
+    return (t && activeDay > 0) ? t.days[activeDay - 1] : null;
+  }
+  // 경로 전용 장소: 일자 데이터에 저장 (리프레시 후에도 유지, 데스크톱과 공유)
+  function dayExtras() {
+    const d = dayObj();
+    return (d && Array.isArray(d.routeExtras)) ? d.routeExtras : [];
+  }
+  function saveExtras(arr) {
+    const t = currentTrip();
+    const d = (t && activeDay > 0) ? t.days[activeDay - 1] : null;
+    if (!d) return;
+    d.routeExtras = arr;
+    S.saveTrip(t);
+  }
+  function removeExtra(id) {
+    if (routePick && routePick.originId === id) routePick.originId = null;
+    if (routePick && routePick.destId === id) routePick.destId = null;
+    saveExtras(dayExtras().filter(x => x.id !== id));
+    renderRoutePickBar();
+    redrawPicked();
+  }
+
   function enterRouteMode() {
-    const trip = currentTrip(); if (!trip || activeDay === 0) return;
-    const day = trip.days[activeDay - 1];
-    if (!day || day.places.length < 2) { toast('경로를 보려면 장소가 2개 이상 필요해요'); return; }
+    const day = dayObj(); if (!day) return;
+    if (day.places.length + dayExtras().length < 2) { toast('경로를 보려면 장소가 2개 이상 필요해요'); return; }
     routeModeOn = true;
+    routePick = { originId: null, destId: null };
     applyRouteMode();
   }
 
   function exitRouteMode() {
     if (!routeModeOn) return;
     routeModeOn = false;
-    routeExtras = [];
-    routeSelection = null;
+    routePick = null;
     applyRouteMode();
   }
 
@@ -635,38 +660,116 @@
     const bar = $('#routeBar');
     bar.classList.toggle('hidden', !routeModeOn);
     if (routeModeOn) {
-      sheetLocked = true;
-      setSheet('full');
+      setSheet('half'); // 꽉 채우지 않아 지도가 보임
       $('#routeBarSeg').innerHTML = Object.keys(MODE_LABEL).map(m =>
         '<button data-mode="' + m + '" class="' + (routeMode === m ? 'on' : '') + '">' + MODE_LABEL[m] + '</button>').join('');
+      renderRoutePickBar();
       refreshDay();
-      scheduleRouteDraw();
     } else {
-      clearTimeout(routeDrawTimer);
-      sheetLocked = false;
-      setSheet('half');
       hideRoute();
+      setSheet('half');
       refreshDay();
     }
   }
 
-  function scheduleRouteDraw() {
-    clearTimeout(routeDrawTimer);
-    routeDrawTimer = setTimeout(drawFromInlineSelection, 700);
+  // 출발/도착 선택 상태 바 (이동수단 아래)
+  function renderRoutePickBar() {
+    const bar = $('#routeBar');
+    const old = bar.querySelector('#rbPick');
+    if (old) old.remove();
+    if (!routeModeOn) return;
+    const all = placesForPick();
+    const o = routePick && all.find(p => p.id === routePick.originId);
+    const d = routePick && all.find(p => p.id === routePick.destId);
+    const wrap = document.createElement('div');
+    wrap.id = 'rbPick';
+    wrap.innerHTML =
+      '<button class="rb-pick-btn' + (o ? ' on' : '') + '" data-pickbtn="originId">🚩 출발 <span class="val">' + esc(o ? o.name : '선택') + '</span>' + (o ? '<span data-pickclear="originId">✕</span>' : '') + '</button>' +
+      '<button class="rb-pick-btn' + (d ? ' on' : '') + '" data-pickbtn="destId">🏁 도착 <span class="val">' + esc(d ? d.name : '선택') + '</span>' + (d ? '<span data-pickclear="destId">✕</span>' : '') + '</button>';
+    bar.insertBefore(wrap, bar.querySelector('.rb-info'));
+    $('#rbCount').textContent = (o && d) ? '출발 → 도착 경로 표시 중' : (o ? '도착지를 선택하세요' : '출발지를 선택하세요 — 목록이나 지도 마커를 눌러요');
   }
 
-  function drawFromInlineSelection() {
-    const trip = currentTrip(); if (!trip) return;
-    if (activeDay === 0 || !routeModeOn) return;
-    const day = trip.days[activeDay - 1];
-    if (!day) return;
-    const ids = Array.from(document.querySelectorAll('#placeList .pcheck:checked')).map(c => c.dataset.pcheck);
-    $('#rbCount').textContent = ids.length + '곳 선택';
-    const places = day.places.filter(p => ids.indexOf(p.id) >= 0)
-      .concat(routeExtras.filter(x => ids.indexOf(x.id) >= 0));
-    if (places.length < 2) { hideRoute(); return; }
-    routeSelection = { dayIdx: activeDay - 1, placeIds: ids };
-    drawDayRoute(places);
+  function placesForPick() {
+    const day = dayObj(); if (!day) return [];
+    return day.places.concat(dayExtras());
+  }
+
+  // 행/마커 탭: 첫 탭=출발, 둘째=도착, 같은 곳 재탭=해제
+  function tapEndpoint(id) {
+    if (!routeModeOn || !routePick) return;
+    if (routePick.originId === id) routePick.originId = null;
+    else if (routePick.destId === id) routePick.destId = null;
+    else if (!routePick.originId) routePick.originId = id;
+    else routePick.destId = id;
+    renderRoutePickBar();
+    refreshDay();
+    redrawPicked();
+  }
+
+  function clearEndpoint(which) {
+    if (!routePick) return;
+    routePick[which] = null;
+    renderRoutePickBar();
+    refreshDay();
+    redrawPicked();
+  }
+
+  // 출발/도착 버튼 탭 → 목록에서 고르는 모달 (시트가 접혀 있어도 변경 가능)
+  function openPickModal(which) {
+    const day = dayObj(); if (!day) return;
+    const all = placesForPick();
+    const cur = routePick ? routePick[which] : null;
+    const body =
+      '<div class="field"><label>' + (which === 'originId' ? '🚩 출발 장소' : '🏁 도착 장소') + '</label>' +
+      '<div class="rs-list" id="pkList">' +
+      all.map(p =>
+        '<label class="rs-row"><input type="radio" name="pk" value="' + p.id + '"' + (p.id === cur ? ' checked' : '') + '><span>' + catInfo(p).emoji + ' ' + esc(p.name) +
+        (dayExtras().some(x => x.id === p.id) ? ' <span class="rt-badge">경로 전용</span>' : '') + '</span></label>'
+      ).join('') + '</div></div>' +
+      '<button id="pkOk" class="btn btn-primary btn-block">선택</button>';
+    showModal(which === 'originId' ? '출발지 선택' : '도착지 선택', body);
+    $('#pkOk').addEventListener('click', () => {
+      const sel = document.querySelector('#pkList input[name="pk"]:checked');
+      if (!sel) { toast('장소를 선택해 주세요'); return; }
+      routePick[which] = sel.value;
+      closeModal();
+      renderRoutePickBar();
+      refreshDay();
+      redrawPicked();
+    });
+  }
+
+  function setRouteMode(m) {
+    routeMode = m;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+    redrawPicked();
+  }
+
+  // 출발·도착 모두 선택되면 자동 경로 탐색
+  function redrawPicked() {
+    const day = dayObj(); if (!day || !routeModeOn || !routePick) { hideRoute(); return; }
+    const o = routePick.originId, d = routePick.destId;
+    if (!o || !d || o === d) { hideRoute(); return; }
+    const all = placesForPick();
+    const op = all.find(p => p.id === o), dp = all.find(p => p.id === d);
+    if (!op || !dp) { hideRoute(); return; }
+    drawRouteBetween(op, dp);
+  }
+
+  function drawRouteBetween(op, dp) {
+    if (!M.isReady()) { toast('지도를 기다리는 중이에요'); return; }
+    showRoutePanel(null);
+    const color = dayColor(activeDay - 1);
+    let guard = setTimeout(() => renderRouteResult({ error: '경로 계산이 오래 걸리고 있어요. 네트워크를 확인하고 다시 시도해 주세요.' }), 20000);
+    const finish = (r) => { clearTimeout(guard); renderRouteResult(r); };
+    try {
+      if (routeMode === 'TRANSIT') M.drawTransit([op, dp], color, finish);
+      else M.drawRoute([op, dp], routeMode, color, finish);
+    } catch (e) { clearTimeout(guard); renderRouteResult({ error: '경로 요청 오류: ' + e.message }); }
+    // 경로가 보이게 지도 프레임 조정 + 시트 접어 지도 확보
+    M.fitBounds([{ lat: op.lat, lng: op.lng }, { lat: dp.lat, lng: dp.lng }]);
+    setSheet('peek');
   }
 
   async function openRoutePicker() {
@@ -695,15 +798,16 @@
       resEl.querySelectorAll('[data-rtadd]').forEach(b => b.addEventListener('click', () => {
         const x = routePickResults[Number(b.dataset.rtadd)];
         if (!x) return;
-        routeExtras.push({
+        const arr = dayExtras();
+        arr.push({
           id: 'rt_' + S.uid(), name: x.name,
           category: (x.name || '').includes('카페') || (x.name || '').toLowerCase().includes('cafe') ? 'cafe' : 'restaurant',
           lat: x.lat, lng: x.lng, note: x.rating ? '★ ' + x.rating + ' (리뷰 ' + x.reviews + ')' : '', tags: ['경로 전용'], links: {}
         });
+        saveExtras(arr);
         b.textContent = '✓ 추가됨';
         b.disabled = true;
         refreshDay();
-        scheduleRouteDraw();
       }));
     };
     q.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
@@ -727,12 +831,11 @@
   }
 
   function showRoutePanel(active) {
-    const inline = routeModeOn;
     const el = $('#routeInfo');
     const sri = $('#sheetRouteInfo');
-    el.classList.toggle('hidden', inline);
-    sri.classList.toggle('hidden', !inline);
-    const target = inline ? sri : el;
+    sri.classList.add('hidden');
+    el.classList.remove('hidden');
+    const target = el;
     const seg = '<div class="seg">' + Object.keys(MODE_LABEL).map(m =>
       '<button data-mode="' + m + '" class="' + (routeMode === m ? 'on' : '') + '">' + MODE_LABEL[m] + '</button>').join('') + '</div>';
     const close = '<div style="text-align:right;margin-top:4px"><button id="routeClose" style="color:var(--muted);font-size:13px;padding:6px">✕ 닫기</button></div>';
@@ -786,28 +889,6 @@
       });
       showRoutePanel(h);
     }
-  }
-
-  function drawDayRoute(placesOverride) {
-    const trip = currentTrip(); if (!trip) return;
-    if (activeDay === 0) { drawAllDays(); return; }
-    const day = trip.days[activeDay - 1];
-    if (!M.isReady()) { toast('지도를 기다리는 중이에요'); return; }
-    let places = placesOverride;
-    if (!places && routeSelection && routeSelection.dayIdx === activeDay - 1) {
-      places = day.places.filter(p => routeSelection.placeIds.indexOf(p.id) >= 0);
-    }
-    if (!places) places = day.places;
-    if (places.length < 2) { toast('경로에 선택한 장소가 2개 이상이어야 해요'); return; }
-    showRoutePanel(null);
-    const color = dayColor(activeDay - 1);
-    const nLegs = Math.max(1, places.length - 1);
-    let guard = setTimeout(() => renderRouteResult({ error: '경로 계산이 오래 걸리고 있어요. 네트워크를 확인하고 다시 시도해 주세요.' }), 8000 + nLegs * 12000);
-    const finish = (r) => { clearTimeout(guard); renderRouteResult(r); };
-    try {
-      if (routeMode === 'TRANSIT') M.drawTransit(places, color, finish);
-      else M.drawRoute(places, routeMode, color, finish);
-    } catch (e) { clearTimeout(guard); renderRouteResult({ error: '경로 요청 오류: ' + e.message }); }
   }
 
   // 전체 보기: 일자별 동선을 색으로 한 지도에 표시
