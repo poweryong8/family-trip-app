@@ -216,7 +216,7 @@ window.FTMap = (function () {
       if (got.status !== 'OK') {
         got = await routeReq(svc, Object.assign({ travelMode: 'WALKING' }, req));
       }
-      const out = { from: from.name, to: to.name, dur: '', dist: '', transit: [], walkOnly: false, noTransit: false };
+      const out = { from: from.name, to: to.name, fromLat: from.lat, fromLng: from.lng, toLat: to.lat, toLng: to.lng, dur: '', dist: '', transit: [], walkOnly: false, noTransit: false };
       if (got.status === 'OK') {
         const info = legInfo(got.res);
         const leg = got.res.routes[0].legs[0];
@@ -277,11 +277,11 @@ window.FTMap = (function () {
     };
   }
 
-  // 가게 상세 (영업시간·전화·웹사이트)
+  // 가게 상세 (영업시간·전화·웹사이트·리뷰)
   function placeDetails(placeId) {
     return new Promise((res) => {
       try {
-        service().getDetails({ placeId: placeId, fields: ['name', 'rating', 'user_ratings_total', 'formatted_address', 'formatted_phone_number', 'website', 'opening_hours', 'price_level', 'url', 'geometry'] }, (p, status) => {
+        service().getDetails({ placeId: placeId, fields: ['name', 'rating', 'user_ratings_total', 'formatted_address', 'formatted_phone_number', 'website', 'opening_hours', 'price_level', 'url', 'geometry', 'reviews'] }, (p, status) => {
           if (status !== 'OK' || !p) { res(null); return; }
           res({
             rating: p.rating || null,
@@ -292,7 +292,13 @@ window.FTMap = (function () {
             address: p.formatted_address || '',
             phone: p.formatted_phone_number || null,
             website: p.website || null,
-            url: p.url || null
+            url: p.url || null,
+            reviewList: (p.reviews || []).slice(0, 5).map(rv => ({
+              author: rv.author_name || '',
+              rating: rv.rating || null,
+              text: (rv.text || '').slice(0, 300),
+              rel: rv.relative_time_description || ''
+            }))
           });
         });
       } catch (e) { res(null); }

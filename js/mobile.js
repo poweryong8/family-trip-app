@@ -91,6 +91,7 @@
       const pIdx = Number(btn.dataset.idx);
       const act = btn.dataset.act;
       if (act === 'photo') { pendingPhoto = { dayIdx, pIdx, placeId: btn.dataset.place }; $('#photoInput').click(); }
+      else if (act === 'info') showPlaceInfo(dayIdx, pIdx);
       else if (act === 'edit') openPlaceModal({ dayIdx, pIdx });
       else if (act === 'del') deletePlace(dayIdx, pIdx);
       else if (act === 'rtdel') {
@@ -303,6 +304,7 @@
             '</div>' +
           '</div>' +
           '<div class="pacts">' +
+            '<button data-act="info" data-day="' + r.dayIdx + '" data-idx="' + r.pIdx + '" title="가게 정보">ℹ️</button>' +
             '<button data-act="edit" data-day="' + r.dayIdx + '" data-idx="' + r.pIdx + '" title="수정">✏️</button>' +
             '<button data-act="del" data-day="' + r.dayIdx + '" data-idx="' + r.pIdx + '" title="삭제">🗑️</button>' +
           '</div>';
@@ -531,11 +533,26 @@
     const cat = (r.name || '').includes('카페') || (r.name || '').toLowerCase().includes('cafe') ? 'cafe' : 'restaurant';
     day.places.push({
       id: S.uid(), name: r.name, category: cat, lat: r.lat, lng: r.lng,
+      placeId: r.placeId || null,
       note: (r.rating ? '★ ' + r.rating + ' (리뷰 ' + r.reviews + ')' : '') + (r.open == null ? '' : (r.open ? ' · 영업 중' : ' · 영업 종료')),
       tags: ['검색 추가'], links: {}
     });
     S.saveTrip(trip);
     refreshDay();
+  }
+
+  // 리뷰 목록 → HTML (가게 정보 모달 공용)
+  function renderReviewsHtml(rvList) {
+    if (!rvList || !rvList.length) return '';
+    return '<div style="margin-top:12px;font-weight:800">💬 리뷰 ' + rvList.length + '개</div>' +
+      rvList.map(rv =>
+        '<div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:10px">' +
+        '<div style="font-size:13px;font-weight:700">' + esc(rv.author) +
+        (rv.rating ? ' <span class="star">★ ' + rv.rating + '</span>' : '') +
+        ' <span style="color:var(--muted);font-weight:400">' + esc(rv.rel) + '</span></div>' +
+        (rv.text ? '<div style="font-size:13.5px;margin-top:3px">' + esc(rv.text) + '</div>' : '') +
+        '</div>'
+      ).join('');
   }
 
   async function openPlaceDetail(idx) {
@@ -569,6 +586,7 @@
       if (extra.hours && extra.hours.length) h += '<div style="margin-top:6px">🕐 ' + extra.hours.join('<br>🕐 ') + '</div>';
       if (extra.phone) h += '<div style="margin-top:6px">📞 ' + esc(extra.phone) + '</div>';
       if (extra.website) h += '<div style="margin-top:6px">🌐 <a href="' + esc(extra.website) + '" target="_blank" rel="noopener">' + esc(extra.website.replace(/^https?:\/\//, '')) + '</a></div>';
+      h += renderReviewsHtml(extra.reviewList);
       ex.innerHTML = h || '<span class="hint">추가 정보 없음</span>';
     } else if (ex) {
       ex.textContent = '추가 정보를 불러오지 못했어요 (네트워크/할당량 확인)';
@@ -580,6 +598,42 @@
       toast('「' + r.name + '」 ' + (dayIdx + 1) + '일차에 추가했어요');
     });
     $('#pdMap').addEventListener('click', () => { closeModal(); switchTab('map'); M.panTo(r.lat, r.lng); });
+  }
+
+  // 일정에 저장된 장소의 가게 정보 (리뷰·영업시간·웹사이트). placeId 없으면 이름 검색으로 매칭해 캐시
+  async function showPlaceInfo(dayIdx, pIdx) {
+    const trip = currentTrip(); if (!trip) return;
+    const p = trip.days[dayIdx].places[pIdx]; if (!p) return;
+    showModal('가게 정보',
+      '<div style="font-size:18px;font-weight:900;margin-bottom:2px">' + esc(p.name) + '</div>' +
+      '<div id="piBody" class="hint">정보 불러오는 중…</div>');
+    let placeId = p.placeId || null;
+    if (!placeId) {
+      const r = await M.searchText(p.name, { lat: p.lat, lng: p.lng });
+      if (r.ok && r.results.length) {
+        placeId = r.results[0].placeId;
+        p.placeId = placeId;
+        S.saveTrip(trip);
+      }
+    }
+    const body = $('#piBody');
+    if (!placeId) {
+      if (body) body.innerHTML = '<span class="hint">가게 정보를 찾지 못했어요. 검색에서 다시 추가하거나 수정(✏️)으로 이름을 확인해 주세요.</span>';
+      return;
+    }
+    const extra = await M.placeDetails(placeId);
+    if (!extra || !body) { if (body) body.textContent = '정보를 불러오지 못했어요 (네트워크/할당량 확인)'; return; }
+    let h = '<div class="sr-meta">' +
+      (extra.rating ? '<span class="star">★ ' + extra.rating + '</span> (' + extra.reviews + ')' : '') +
+      (extra.price ? ' · ' + '$'.repeat(extra.price) : '') +
+      (extra.open == null ? '' : (extra.open ? ' · 영업 중' : ' · 영업 종료')) + '</div>' +
+      (extra.address ? '<div style="font-size:14px;color:var(--muted);margin:4px 0">' + esc(extra.address) + '</div>' : '');
+    if (extra.hours && extra.hours.length) h += '<div style="margin-top:6px">🕐 ' + extra.hours.join('<br>🕐 ') + '</div>';
+    if (extra.phone) h += '<div style="margin-top:6px">📞 ' + esc(extra.phone) + '</div>';
+    if (extra.website) h += '<div style="margin-top:6px">🌐 <a href="' + esc(extra.website) + '" target="_blank" rel="noopener">' + esc(extra.website.replace(/^https?:\/\//, '')) + '</a></div>';
+    if (extra.url) h += '<div style="margin-top:8px"><a class="tp-link" href="' + esc(extra.url) + '" target="_blank" rel="noopener">📍 Google 지도에서 열기</a></div>';
+    h += renderReviewsHtml(extra.reviewList);
+    body.innerHTML = h;
   }
 
   /* ================= 여행 선택 ================= */
@@ -821,17 +875,16 @@
   }
 
   // 구글 트랜짓 미지원 구간 → 내장 SCHEDULES 참고 교통편
+  // 매칭은 키워드 길이 가중치('삿포로역' > '삿포로')로 정확한 항목 우선
   function findSchedule(from, to) {
     const scheds = (window.FTA_DATA && FTA_DATA.SCHEDULES) || [];
     const f = from || '', t = to || '';
-    let best = null, bestScore = 0, bestSpec = 99;
+    let best = null, bestScore = -1;
     scheds.forEach(s => {
-      const sf = s.match.some(k => f.includes(k)) ? 1 : 0;
-      const st = s.match.some(k => t.includes(k)) ? 1 : 0;
+      const sf = s.match.reduce((a, k) => a + (f.includes(k) ? k.length : 0), 0);
+      const st = s.match.reduce((a, k) => a + (t.includes(k) ? k.length : 0), 0);
       const score = sf + st;
-      if (score > bestScore || (score === bestScore && score > 0 && s.match.length < bestSpec)) {
-        bestScore = score; best = s; bestSpec = s.match.length;
-      }
+      if (score > bestScore) { bestScore = score; best = s; }
     });
     return bestScore >= 1 ? best : null;
   }
@@ -862,6 +915,13 @@
       '<div class="rp-detail' + (routePanelExpanded ? '' : ' hidden') + '">' + detail + '</div>' + close;
   }
 
+  // 구간 좌표로 구글 지도 대중교통 경로 바로 열기
+  function gmapsTransitLink(leg) {
+    if (leg.fromLat == null || leg.toLat == null) return '';
+    return '<a class="tp-link" style="margin-top:6px" href="https://www.google.com/maps/dir/?api=1&origin=' + leg.fromLat + ',' + leg.fromLng +
+      '&destination=' + leg.toLat + ',' + leg.toLng + '&travelmode=transit" target="_blank" rel="noopener">🚇 Google 지도에서 대중교통 보기</a>';
+  }
+
   function renderRouteResult(r) {
     if (r.error) { showRoutePanel('경로 계산 실패', '<div style="color:var(--danger)">' + esc(r.error) + '</div>', { expanded: true }); return; }
     if (r.transit) {
@@ -883,8 +943,20 @@
           } else {
             h += '<div class="tt-note">— [이동] 탭의 공식 사이트에서 확인해 주세요</div>';
           }
+          h += gmapsTransitLink(leg);
         } else if (leg.walkOnly) {
           h += '<div class="tt-note">🚶 도보 이동 (대중교통 구간 없음)</div>';
+          const sched = findSchedule(leg.from, leg.to);
+          if (sched) {
+            h += '<div class="tt-sched">' +
+              '<span class="tt-line">' + sched.emoji + ' ' + esc(sched.line) + '</span>' +
+              '<div class="tm">' + esc(sched.info) + '</div>' +
+              (sched.hours ? '<div class="tm">🕐 ' + esc(sched.hours) + '</div>' : '') +
+              (sched.note ? '<div class="tm">💡 ' + esc(sched.note) + '</div>' : '') +
+              '<a class="tp-link" href="' + esc(sched.url) + '" target="_blank" rel="noopener">공식 시간표 · 예약</a>' +
+              '</div>';
+          }
+          h += gmapsTransitLink(leg);
         } else {
           leg.transit.forEach(t => {
             h += '<div class="tt-row">' +
