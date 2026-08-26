@@ -1,6 +1,6 @@
 // 구글 지도: 지도 초기화 · 일자별 마커 · 경로(차/대중교통/도보) · 장소·맛집 검색
 window.FTMap = (function () {
-  let map = null, info = null, markers = [], renderers = [], started = false;
+  let map = null, info = null, markers = [], routeLayers = [], started = false;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -99,12 +99,13 @@ window.FTMap = (function () {
     });
   }
 
-  function fitBounds(latlngs) {
+  function fitBounds(latlngs, pad) {
     if (!latlngs.length) return;
     if (latlngs.length === 1) { map.setCenter(latlngs[0]); map.setZoom(15); return; }
     const b = new google.maps.LatLngBounds();
     latlngs.forEach(ll => b.extend(ll));
-    map.fitBounds(b, 60);
+    // pad: 숫자(전방향) 또는 {top,right,bottom,left} — 모바일은 시트/카드가 지도를 덮으므로 여백 필수
+    map.fitBounds(b, pad || 60);
   }
   function panTo(lat, lng) { map.panTo({ lat, lng }); }
   function getCenter() { return map ? map.getCenter() : null; }
@@ -112,10 +113,27 @@ window.FTMap = (function () {
 
   /* ---------- 경로 ---------- */
   function clearRoute() {
-    renderers.forEach(r => r.setMap(null));
-    renderers = [];
+    routeLayers.forEach(l => l.setMap(null));
+    routeLayers = [];
   }
-  function rendererCount() { return renderers.length; }
+  function rendererCount() { return routeLayers.length; }
+
+  // Directions 결과에서 폴리라인 경로점 추출 (overview_path 우선, 없으면 step 경로 연결)
+  function routePath(res) {
+    const r0 = res.routes[0];
+    if (r0 && r0.overview_path && r0.overview_path.length) return r0.overview_path;
+    const pts = [];
+    (r0 && r0.legs || []).forEach(l => (l.steps || []).forEach(s => { if (s.path && s.path.length) pts.push.apply(pts, s.path); }));
+    return pts;
+  }
+
+  // 경로선 2겹: 흰색 테두리(아래) + 일자 색상(위) → 지도 도로와 색이 같아도 항상 보임
+  function addRoutePolyline(path, color, weight) {
+    if (!path || !path.length) return;
+    const outline = new google.maps.Polyline({ map: map, path: path, strokeColor: '#ffffff', strokeWeight: weight + 3, strokeOpacity: 0.95, zIndex: 1 });
+    const main = new google.maps.Polyline({ map: map, path: path, strokeColor: color, strokeWeight: weight, strokeOpacity: 0.95, zIndex: 2 });
+    routeLayers.push(outline, main);
+  }
 
   // Directions 요청 래퍼: 타임아웃(10초) + 예외 방지 — 절대 안 끝나지 않는 콜백 없음
   function routeReq(svc, req, ms) {
@@ -143,10 +161,7 @@ window.FTMap = (function () {
     }).then(got => {
       if (got.status !== 'OK') { onDone({ error: '경로를 찾지 못했어요 (' + got.status + ')' }); return; }
       const res = got.res;
-      const r = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true,
-        polylineOptions: { strokeColor: color, strokeWeight: 6, strokeOpacity: 0.9 } });
-      r.setDirections(res);
-      renderers.push(r);
+      addRoutePolyline(routePath(res), color, 6);
       const legs = res.routes[0].legs;
       const totalD = legs.reduce((a, l) => a + l.distance.value, 0) / 1000;
       const totalT = legs.reduce((a, l) => a + l.duration.value, 0) / 60;
@@ -212,10 +227,7 @@ window.FTMap = (function () {
         out.walkOnly = walkOnly && !walkTooLong;
         out.noTransit = walkTooLong;
         // 폴백이든 대중교통이든 지도에는 항상 경로를 그려줌 (안내 문구만 다름)
-        const r = new google.maps.DirectionsRenderer({ map: map, suppressMarkers: true,
-          polylineOptions: { strokeColor: color, strokeWeight: 5, strokeOpacity: 0.85 } });
-        r.setDirections(got.res);
-        renderers.push(r);
+        addRoutePolyline(routePath(got.res), color, 5);
       } else {
         out.noTransit = true;
         out.dur = got.status;

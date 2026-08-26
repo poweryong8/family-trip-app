@@ -348,7 +348,7 @@
         if (routeModeOn) tapEndpoint(p.id);
         else openPlaceModal({ dayIdx: hit.dayIdx, pIdx: hit.pIdx });
       });
-      M.fitBounds(rows.map(r => ({ lat: r.place.lat, lng: r.place.lng })));
+      M.fitBounds(rows.map(r => ({ lat: r.place.lat, lng: r.place.lng })), { top: 60, bottom: 250, left: 60, right: 60 });
     }
 
     if (tab === 'list') await renderItinerary();
@@ -773,7 +773,8 @@
       else M.drawRoute([op, dp], routeMode, color, finish);
     } catch (e) { clearTimeout(guard); renderRouteResult({ error: '경로 요청 오류: ' + e.message }); }
     // 경로가 보이게 지도 프레임 조정 + 시트 접어 지도 확보
-    M.fitBounds([{ lat: op.lat, lng: op.lng }, { lat: dp.lat, lng: dp.lng }]);
+    // 상단 카드(~110px)와 하단 시트(peek ~240px)에 가리지 않도록 여백
+    M.fitBounds([{ lat: op.lat, lng: op.lng }, { lat: dp.lat, lng: dp.lng }], { top: 130, bottom: 250 });
     setSheet('peek');
   }
 
