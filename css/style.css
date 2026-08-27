@@ -93,6 +93,14 @@ button:focus-visible,a:focus-visible,select:focus-visible,[role="button"]:focus-
 .thumbs{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center}
 .thumb{width:56px;height:56px;border-radius:10px;object-fit:cover;border:1px solid var(--line)}
 .thumb-add{width:56px;height:56px;border-radius:10px;border:1.5px dashed var(--line);background:var(--paper);font-size:22px;color:var(--muted);display:grid;place-items:center}
+.thumb-btn{position:relative;width:56px;height:56px;border-radius:10px;padding:0;flex:0 0 auto}
+.thumb-btn .thumb{width:56px;height:56px;display:block}
+.thumb-cnt{position:absolute;right:-6px;bottom:-6px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 7px;min-width:24px;text-align:center;box-shadow:var(--shadow)}
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.photo-cell{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--paper)}
+.photo-cell img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-del{position:absolute;top:6px;right:6px;width:34px;height:34px;border-radius:10px;background:rgba(20,20,20,.65);color:#fff;font-size:15px;display:grid;place-items:center}
+.photo-del:active{background:var(--danger)}
 .empty{padding:24px 14px;text-align:center;color:var(--muted)}
 .empty p{margin-bottom:12px}
 

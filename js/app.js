@@ -92,9 +92,9 @@
     $('#importInput').addEventListener('change', onImportFile);
 
     function onPlaceListClick(e) {
+      const tb = e.target.closest('.thumb-btn');
+      if (tb) { openPhotoModal(Number(tb.dataset.day), Number(tb.dataset.idx), tb.dataset.place); return; }
       const btn = e.target.closest('[data-act]');
-      const thumb = e.target.closest('.thumb');
-      if (thumb) { openLightbox(thumb.dataset.place, thumb.dataset.ph); return; }
       if (!btn) return;
       const dayIdx = Number(btn.dataset.day);
       const pIdx = Number(btn.dataset.idx);
@@ -225,8 +225,12 @@
       const p = r.place;
       const cat = catInfo(p);
       const photos = await S.getPhotos(tripId, p.id);
+      // 행에는 첫 사진 1장 + 개수 배지만 — 전체 보기/삭제는 사진 모달에서
       const thumbs = photos.length
-        ? photos.map(ph => '<img class="thumb" src="' + ph.dataUrl + '" data-place="' + p.id + '" data-ph="' + ph.id + '" alt="사진">').join('')
+        ? '<button class="thumb-btn" data-act="photos" data-day="' + r.dayIdx + '" data-idx="' + r.pIdx + '" data-place="' + p.id + '" title="사진 보기/삭제">' +
+          '<img class="thumb" src="' + photos[0].dataUrl + '" alt="사진">' +
+          (photos.length > 1 ? '<span class="thumb-cnt">+' + (photos.length - 1) + '</span>' : '') +
+          '</button>'
         : '';
       const tags = (p.tags || []).map(t => '<span class="tag">#' + esc(t) + '</span>').join('');
       const row = document.createElement('div');
@@ -340,7 +344,8 @@
   /* ================= 장소 추가/수정/삭제 ================= */
   function openPlaceModal(ctx) {
     const trip = currentTrip(); if (!trip) return;
-    let dayIdx = 0, pIdx = null, p = null;
+    // 새 장소는 현재 선택한 일자에 추가 (전체 보기면 1일차)
+    let dayIdx = ctx ? ctx.dayIdx : (activeDay > 0 ? activeDay - 1 : 0), pIdx = null, p = null;
     if (ctx) { dayIdx = ctx.dayIdx; pIdx = ctx.pIdx; p = trip.days[dayIdx].places[pIdx]; }
     const catOpts = Object.keys(D.CATEGORIES).map(k =>
       '<option value="' + k + '"' + (p && p.category === k ? ' selected' : '') + '>' + D.CATEGORIES[k].emoji + ' ' + D.CATEGORIES[k].label + '</option>').join('');
@@ -969,10 +974,53 @@
         saved++;
       }
       refreshDay();
+      if (photoModalCtx) renderPhotoModal();
       toast(saved + '장의 사진을 저장했어요');
     } catch (err) {
       toast('사진 저장 실패: ' + err.message + (saved ? ' (' + saved + '장 저장됨)' : ''));
     }
+  }
+
+  /* ---------- 사진 모달 (일정 행은 첫 1장+배지만, 보기/삭제/추가는 모달에서) ---------- */
+  let photoModalCtx = null;
+
+  function openPhotoModal(dayIdx, pIdx, placeId) {
+    photoModalCtx = { dayIdx, pIdx, placeId };
+    renderPhotoModal();
+  }
+
+  async function renderPhotoModal() {
+    const ctx = photoModalCtx; if (!ctx) return;
+    const trip = currentTrip(); if (!trip) return;
+    const place = trip.days[ctx.dayIdx] && trip.days[ctx.dayIdx].places[ctx.pIdx];
+    if (!place) { closeModal(); photoModalCtx = null; return; }
+    const photos = await S.getPhotos(trip.id, ctx.placeId);
+    const grid = photos.length
+      ? photos.map(ph =>
+          '<div class="photo-cell">' +
+            '<img src="' + ph.dataUrl + '" data-ph="' + ph.id + '" alt="" loading="lazy">' +
+            '<button class="photo-del" data-del="' + ph.id + '" title="사진 삭제">🗑️</button>' +
+          '</div>').join('')
+      : '<div class="empty"><p>아직 사진이 없어요. 아래 버튼으로 추가해 보세요.</p></div>';
+    showModal('📷 사진 ' + photos.length + '장',
+      '<div class="photo-grid">' + grid + '</div>' +
+      '<button id="pmPhotoAdd" class="btn btn-primary btn-block" style="margin-top:14px">📷 사진 추가</button>');
+    document.querySelectorAll('#modalRoot .photo-cell img').forEach(img => {
+      img.addEventListener('click', () => openLightbox(ctx.placeId, img.dataset.ph));
+    });
+    document.querySelectorAll('#modalRoot .photo-del').forEach(b => {
+      b.addEventListener('click', async () => {
+        if (!confirm('이 사진을 삭제할까요?')) return;
+        await S.deletePhoto(trip.id, ctx.placeId, b.dataset.del);
+        renderPhotoModal();
+        refreshDay();
+        toast('사진을 삭제했어요');
+      });
+    });
+    $('#pmPhotoAdd').addEventListener('click', () => {
+      pendingPhoto = { dayIdx: ctx.dayIdx, pIdx: ctx.pIdx, placeId: ctx.placeId };
+      $('#photoInput').click();
+    });
   }
 
   function openLightbox(placeId, photoId) {
@@ -1000,6 +1048,7 @@
         await S.deletePhoto(lightboxCtx.tripId, lightboxCtx.placeId, lightboxCtx.photoId);
         closeLightbox();
         refreshDay();
+        if (photoModalCtx) renderPhotoModal();
         toast('사진을 삭제했어요');
       });
       lb.appendChild(del);
