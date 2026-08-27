@@ -60,7 +60,7 @@ window.FTStore = (function () {
       days.push({ date: d.toISOString().slice(0, 10), title: n + '일차', transport: '', places: [] });
       n++;
     }
-    const trip = { id: uid(), name, startDate, endDate, days };
+    const trip = { id: uid(), name, startDate, endDate, memo: '', days };
     st.trips.push(trip);
     st.activeTripId = trip.id;
     saveState(st);
@@ -122,6 +122,32 @@ window.FTStore = (function () {
     });
   }
 
+  /* ---------- 가족 사진 (랜딩 페이지, IndexedDB 'family::photo') ---------- */
+  const FAM_KEY = 'family::photo';
+  function getFamilyPhoto() {
+    return idb().then(db => new Promise((res) => {
+      const rq = db.transaction(STORE, 'readonly').objectStore(STORE).get(FAM_KEY);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    }));
+  }
+  function setFamilyPhoto(dataUrl) {
+    return idb().then(db => new Promise((res, rej) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(dataUrl, FAM_KEY);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    }));
+  }
+  function deleteFamilyPhoto() {
+    return idb().then(db => new Promise((res, rej) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(FAM_KEY);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    }));
+  }
+
   /* ---------- 이미지 압축 (사진 촬영/선택 → 저장) ---------- */
   function compressImage(file, max = 1280, quality = 0.78) {
     return new Promise((res, rej) => {
@@ -176,5 +202,6 @@ window.FTStore = (function () {
   }
 
   return { uid, clone, getState, saveState, ensureSeed, activeTrip, setActiveTrip, saveTrip, deleteTrip, addTrip,
-           getPhotos, addPhoto, deletePhoto, countPhotos, compressImage, exportJSON, importJSON };
+           getPhotos, addPhoto, deletePhoto, countPhotos, compressImage, exportJSON, importJSON,
+           getFamilyPhoto, setFamilyPhoto, deleteFamilyPhoto };
 })();

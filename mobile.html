@@ -19,10 +19,26 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/mobile.css?v=m5">
+<link rel="stylesheet" href="css/mobile.css?v=m6">
 </head>
 <body>
 <div id="app">
+  <!-- 랜딩: 가족 사진 + 여행 선택/생성 -->
+  <div id="landing" class="hidden">
+    <div class="ld-inner">
+      <div class="ld-photo" id="ldPhoto"></div>
+      <h1 class="ld-title">우리 가족 여행</h1>
+      <p class="ld-sub">어디로 떠날까요?</p>
+      <div class="ld-trips" id="ldTrips"></div>
+      <button id="ldNewTrip" class="btn btn-ghost btn-block" type="button">✈️ 새 여행 만들기</button>
+      <div class="ld-new hidden" id="ldNewForm">
+        <input type="text" id="ldName" placeholder="여행 이름 (예: 도쿄 가족여행)">
+        <div class="date-row"><input type="date" id="ldStart"><input type="date" id="ldEnd"></div>
+        <button id="ldCreate" class="btn btn-primary btn-block" type="button">만들고 시작하기</button>
+      </div>
+      <p class="ld-hint">가족 사진은 [더보기] 탭에서 바꿀 수 있어요.</p>
+    </div>
+  </div>
   <!-- 컴팩트 헤더: 여행명 + 설정 -->
   <header id="topbar">
     <button id="tripBtn" type="button" aria-label="여행 선택">
@@ -102,13 +118,14 @@
 <div id="toast" class="toast hidden" role="alert"></div>
 <div id="modalRoot"></div>
 <input type="file" id="photoInput" accept="image/*" multiple class="hidden">
+<input type="file" id="familyPhotoInput" accept="image/*" class="hidden">
 <input type="file" id="importInput" accept="application/json,.json" class="hidden">
 
-<script src="js/config.js?v=m5"></script>
-<script src="js/data.js?v=m5"></script>
-<script src="js/storage.js?v=m5"></script>
-<script src="js/maps.js?v=m5"></script>
-<script src="js/report.js?v=m5"></script>
-<script src="js/mobile.js?v=m5"></script>
+<script src="js/config.js?v=m6"></script>
+<script src="js/data.js?v=m6"></script>
+<script src="js/storage.js?v=m6"></script>
+<script src="js/maps.js?v=m6"></script>
+<script src="js/report.js?v=m6"></script>
+<script src="js/mobile.js?v=m6"></script>
 </body>
 </html>

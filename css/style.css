@@ -13,6 +13,27 @@ button{font-family:inherit;font-size:inherit;color:inherit;background:none;borde
 button:focus-visible,a:focus-visible,select:focus-visible,[role="button"]:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
 .hidden{display:none!important}
 
+/* ===== 랜딩 (가족 사진 + 여행 선택/생성) ===== */
+#landing{position:fixed;inset:0;z-index:100;background:var(--paper);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:48px 24px 30px}
+.ld-inner{max-width:430px;width:100%;margin:0 auto;text-align:center}
+.ld-photo{width:124px;height:124px;border-radius:50%;margin:0 auto 20px;background:var(--surface);border:3px solid var(--line);display:grid;place-items:center;overflow:hidden;box-shadow:var(--shadow)}
+.ld-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.ld-ph-emoji{font-size:54px}
+.ld-title{font-size:26px;font-weight:900;letter-spacing:-.5px}
+.ld-sub{color:var(--muted);font-size:14px;margin:4px 0 24px}
+.ld-trips{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.ld-trip{display:flex;align-items:center;gap:12px;text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow);width:100%}
+.ld-trip:active{transform:scale(.98)}
+.ld-trip.active{border-color:var(--accent);background:var(--accent-soft)}
+.ld-trip-emoji{font-size:24px;flex:0 0 auto}
+.ld-trip-name{flex:1;min-width:0;font-weight:800;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ld-trip-meta{font-size:12.5px;color:var(--muted);flex:0 0 auto}
+.ld-new{background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px;text-align:left;box-shadow:var(--shadow)}
+.ld-new input{width:100%;font-family:inherit;font-size:16px;padding:12px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:var(--surface);color:var(--ink)}
+.ld-hint{font-size:12.5px;color:var(--muted);margin-top:12px}
+.memo-box{width:100%;font-family:inherit;font-size:15px;padding:12px;border:1px solid var(--line);border-radius:11px;min-height:150px;resize:vertical;background:var(--surface);color:var(--ink)}
+.fam-preview{width:72px;height:72px;border-radius:14px;object-fit:cover;border:1px solid var(--line);background:var(--paper)}
+
 #app{display:flex;flex-direction:column;height:100dvh;max-width:900px;margin:0 auto;position:relative}
 
 /* ===== 상단 바 ===== */

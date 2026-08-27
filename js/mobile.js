@@ -47,6 +47,7 @@
     M.init();
     window.addEventListener('ftmapsready', () => { mapsReady = true; refreshDay(); });
     window.addEventListener('ftmapsfail', e => toast(e.detail || '지도를 불러오지 못했어요'));
+    showLanding();
   }
 
   /* ================= 이벤트 ================= */
@@ -56,7 +57,7 @@
       switchTab(b.dataset.tab);
     });
     $('#btnSettings').addEventListener('click', () => switchTab('more'));
-    $('#tripBtn').addEventListener('click', openTripModal);
+    $('#tripBtn').addEventListener('click', showLanding);
     $('#btnAddPlace').addEventListener('click', () => openPlaceModal(null));
     // 지도 탭 → 장소 추가 배너 / 위치 선택 모드
     window.addEventListener('ftmapclick', onMapClick);
@@ -165,7 +166,30 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeLightbox(); } });
 
     $('#photoInput').addEventListener('change', onPhotoFile);
+    $('#familyPhotoInput').addEventListener('change', onFamilyPhotoFile);
     $('#importInput').addEventListener('change', onImportFile);
+
+    // 랜딩: 여행 선택 / 새 여행 생성
+    $('#landing').addEventListener('click', e => {
+      const card = e.target.closest('[data-ldtrip]');
+      if (card) {
+        S.setActiveTrip(card.dataset.ldtrip);
+        afterTripChange();
+        hideLanding();
+        return;
+      }
+      if (e.target.closest('#ldNewTrip')) { $('#ldNewForm').classList.toggle('hidden'); return; }
+      if (e.target.closest('#ldCreate')) {
+        const name = $('#ldName').value.trim();
+        const s = $('#ldStart').value, en = $('#ldEnd').value;
+        if (!name || !s || !en) { toast('이름과 날짜를 입력해 주세요'); return; }
+        if (en < s) { toast('종료일이 시작일보다 빠를 수 없어요'); return; }
+        S.addTrip(name, s, en);
+        afterTripChange();
+        hideLanding();
+        toast('여행을 만들었어요');
+      }
+    });
 
     // 더보기 탭: 카드 액션 (이벤트 위임)
     $('#moreView').addEventListener('click', async e => {
@@ -179,6 +203,19 @@
         S.addTrip(name, s, en);
         afterTripChange();
         toast('여행을 추가했어요');
+      } else if (act === 'fam-photo') { $('#familyPhotoInput').click(); }
+      else if (act === 'fam-del') {
+        if (!confirm('가족 사진을 삭제할까요?')) return;
+        await S.deleteFamilyPhoto();
+        renderMore();
+        toast('가족 사진을 삭제했어요');
+      }
+      else if (act === 'memo-save') {
+        const t = currentTrip();
+        if (!t) return;
+        t.memo = $('#memoText').value;
+        S.saveTrip(t);
+        toast('메모를 저장했어요');
       } else if (act === 'del-trip') {
         const trip = currentTrip();
         if (!trip || !confirm('현재 여행을 삭제할까요? (일정만 삭제, 사진 유지)')) return;
@@ -710,6 +747,29 @@
     body.innerHTML = h;
   }
 
+  /* ================= 랜딩 (가족 사진 + 여행 선택/생성) ================= */
+  async function renderLanding() {
+    const st = S.getState();
+    const fp = await S.getFamilyPhoto();
+    $('#ldPhoto').innerHTML = fp ? '<img src="' + fp + '" alt="가족 사진">' : '<span class="ld-ph-emoji">👨‍👩‍👧</span>';
+    const trips = st ? st.trips : [];
+    $('#ldTrips').innerHTML = trips.map(t => {
+      const active = st && t.id === st.activeTripId;
+      const d = (t.startDate || '').slice(5).replace('-', '/') + '~' + (t.endDate || '').slice(5).replace('-', '/');
+      return '<button class="ld-trip' + (active ? ' active' : '') + '" data-ldtrip="' + t.id + '">' +
+        '<span class="ld-trip-emoji">🗺️</span>' +
+        '<span class="ld-trip-name">' + esc(t.name) + '</span>' +
+        '<span class="ld-trip-meta">' + esc(d) + ' · ' + t.days.length + '일</span></button>';
+    }).join('');
+  }
+  function showLanding() {
+    renderLanding();
+    $('#landing').classList.remove('hidden');
+  }
+  function hideLanding() {
+    $('#landing').classList.add('hidden');
+  }
+
   /* ================= 여행 선택 ================= */
   function openTripModal() {
     const st = S.getState();
@@ -1122,7 +1182,18 @@
   async function renderMore() {
     const trip = currentTrip();
     const photoCount = await S.countPhotos();
+    const fp = await S.getFamilyPhoto();
     $('#moreView').innerHTML =
+      '<div class="set-card"><div class="card-head">👨‍👩‍👧 가족 사진</div>' +
+        (fp ? '<div class="set-row" style="justify-content:center"><img class="fam-preview" src="' + fp + '" alt="가족 사진"></div>' : '') +
+        '<div class="set-row"><span class="lbl">랜딩 화면에 표시</span>' +
+        '<button class="btn btn-ghost" data-act="fam-photo">📷 업로드</button>' +
+        (fp ? '<button class="btn btn-danger" data-act="fam-del">삭제</button>' : '') +
+        '</div></div>' +
+      '<div class="set-card"><div class="card-head">📝 여행 메모</div>' +
+        '<div class="set-form"><textarea id="memoText" class="memo-box" placeholder="예약 번호, 준비물, 꼭 가져갈 것 등 자유롭게 적으세요">' + esc((trip && trip.memo) || '') + '</textarea>' +
+        '<button class="btn btn-primary btn-block" data-act="memo-save">메모 저장</button></div>' +
+      '</div>' +
       '<div class="set-card"><div class="card-head">✈️ 새 여행</div><div class="set-form">' +
         '<div class="field-sm"><label>여행 이름</label><input type="text" id="stName" placeholder="예: 도쿄 가족여행"></div>' +
         '<div class="field-sm"><label>기간</label><div class="date-row"><input type="date" id="stStart"><input type="date" id="stEnd"></div></div>' +
@@ -1258,6 +1329,20 @@
     });
   }
   function closeLightbox() { const lb = document.getElementById('lightbox'); if (lb) lb.remove(); lightboxCtx = null; }
+
+  /* ---------- 가족 사진 (랜딩) ---------- */
+  async function onFamilyPhotoFile(e) {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const dataUrl = await S.compressImage(f, 800, 0.8);
+      await S.setFamilyPhoto(dataUrl);
+      renderMore();
+      toast('가족 사진을 저장했어요');
+    } catch (err) {
+      toast('사진 저장 실패: ' + err.message);
+    }
+  }
 
   /* ================= 백업 가져오기 ================= */
   function onImportFile(e) {

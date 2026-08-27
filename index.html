@@ -16,6 +16,22 @@
 </head>
 <body>
 <div id="app">
+  <!-- 랜딩: 가족 사진 + 여행 선택/생성 -->
+  <div id="landing" class="hidden">
+    <div class="ld-inner">
+      <div class="ld-photo" id="ldPhoto"></div>
+      <h1 class="ld-title">우리 가족 여행</h1>
+      <p class="ld-sub">어디로 떠날까요?</p>
+      <div class="ld-trips" id="ldTrips"></div>
+      <button id="ldNewTrip" class="btn btn-ghost btn-block" type="button">✈️ 새 여행 만들기</button>
+      <div class="ld-new hidden" id="ldNewForm">
+        <input type="text" id="ldName" placeholder="여행 이름 (예: 도쿄 가족여행)">
+        <div class="date-row"><input type="date" id="ldStart"><input type="date" id="ldEnd"></div>
+        <button id="ldCreate" class="btn btn-primary btn-block" type="button">만들고 시작하기</button>
+      </div>
+      <p class="ld-hint">가족 사진은 [설정]에서 바꿀 수 있어요.</p>
+    </div>
+  </div>
   <header id="topbar">
     <div class="brand">🧳 <span id="appName">우리 가족 여행</span></div>
     <div class="top-actions">
@@ -54,6 +70,7 @@
           <button id="sheetMini" class="btn btn-ghost" type="button">🗺️ 지도 크게</button>
           <button id="btnAddPlace" class="btn btn-primary" type="button">+ 장소 추가</button>
           <button id="btnTransport" class="btn btn-ghost" type="button">🚌 시간표 · 이동</button>
+          <button id="btnMemo" class="btn btn-ghost" type="button">📝 메모</button>
         </div>
       </div>
       <div id="routeBar" class="hidden">
@@ -83,13 +100,14 @@
 
 <!-- 숨김 입력: 사진 촬영/선택, JSON 가져오기 -->
 <input type="file" id="photoInput" accept="image/*" multiple class="hidden">
+<input type="file" id="familyPhotoInput" accept="image/*" class="hidden">
 <input type="file" id="importInput" accept="application/json,.json" class="hidden">
 
-<script src="js/config.js?v=18"></script>
-<script src="js/data.js?v=18"></script>
-<script src="js/storage.js?v=18"></script>
-<script src="js/maps.js?v=18"></script>
-<script src="js/report.js?v=18"></script>
-<script src="js/app.js?v=18"></script>
+<script src="js/config.js?v=19"></script>
+<script src="js/data.js?v=19"></script>
+<script src="js/storage.js?v=19"></script>
+<script src="js/maps.js?v=19"></script>
+<script src="js/report.js?v=19"></script>
+<script src="js/app.js?v=19"></script>
 </body>
 </html>

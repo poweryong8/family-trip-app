@@ -37,6 +37,7 @@
 
     window.addEventListener('ftmapsready', () => { mapsReady = true; refreshDay(); });
     window.addEventListener('ftmapsfail', e => toast(e.detail || '지도를 불러오지 못했어요'));
+    showLanding();
   }
 
   /* ================= 이벤트 연결 ================= */
@@ -72,6 +73,7 @@
     });
     $('#btnEmptySearch').addEventListener('click', () => openSearchModal('search'));
     $('#btnTransport').addEventListener('click', openTransportModal);
+    $('#btnMemo').addEventListener('click', openMemoModal);
     $('#btnReport').addEventListener('click', openReport);
     $('#btnSettings').addEventListener('click', openSettings);
     $('#btnSearch').addEventListener('click', () => openSearchModal('search'));
@@ -89,7 +91,37 @@
       applyView();
     });
     $('#photoInput').addEventListener('change', onPhotoFile);
+    $('#familyPhotoInput').addEventListener('change', onFamilyPhotoFile);
     $('#importInput').addEventListener('change', onImportFile);
+
+    // 랜딩: 여행 선택 / 새 여행 생성
+    $('#landing').addEventListener('click', e => {
+      const card = e.target.closest('[data-ldtrip]');
+      if (card) {
+        S.setActiveTrip(card.dataset.ldtrip);
+        activeDay = 0;
+        routeSelection = null;
+        routeExtras = loadDayExtras();
+        routeModeOn = false;
+        hideRoute();
+        applyRouteMode();
+        renderTrips(); renderTabs(); refreshDay();
+        hideLanding();
+        return;
+      }
+      if (e.target.closest('#ldNewTrip')) { $('#ldNewForm').classList.toggle('hidden'); return; }
+      if (e.target.closest('#ldCreate')) {
+        const name = $('#ldName').value.trim();
+        const s = $('#ldStart').value, en = $('#ldEnd').value;
+        if (!name || !s || !en) { toast('이름과 날짜를 입력해 주세요'); return; }
+        if (en < s) { toast('종료일이 시작일보다 빠를 수 없어요'); return; }
+        S.addTrip(name, s, en);
+        activeDay = 0;
+        renderTrips(); renderTabs(); refreshDay();
+        hideLanding();
+        toast('여행을 만들었어요');
+      }
+    });
 
     function onPlaceListClick(e) {
       const tb = e.target.closest('.thumb-btn');
@@ -186,6 +218,29 @@
     if (!d) return;
     d.routeExtras = routeExtras;
     S.saveTrip(trip);
+  }
+
+  /* ================= 랜딩 (가족 사진 + 여행 선택/생성) ================= */
+  async function renderLanding() {
+    const st = S.getState();
+    const fp = await S.getFamilyPhoto();
+    $('#ldPhoto').innerHTML = fp ? '<img src="' + fp + '" alt="가족 사진">' : '<span class="ld-ph-emoji">👨‍👩‍👧</span>';
+    const trips = st ? st.trips : [];
+    $('#ldTrips').innerHTML = trips.map(t => {
+      const active = st && t.id === st.activeTripId;
+      const d = (t.startDate || '').slice(5).replace('-', '/') + '~' + (t.endDate || '').slice(5).replace('-', '/');
+      return '<button class="ld-trip' + (active ? ' active' : '') + '" data-ldtrip="' + t.id + '">' +
+        '<span class="ld-trip-emoji">🗺️</span>' +
+        '<span class="ld-trip-name">' + esc(t.name) + '</span>' +
+        '<span class="ld-trip-meta">' + esc(d) + ' · ' + t.days.length + '일</span></button>';
+    }).join('');
+  }
+  function showLanding() {
+    renderLanding();
+    $('#landing').classList.remove('hidden');
+  }
+  function hideLanding() {
+    $('#landing').classList.add('hidden');
   }
 
   function renderTrips() {
@@ -858,6 +913,20 @@
     M.clearRoute();
   }
 
+  /* ================= 여행 메모 ================= */
+  function openMemoModal() {
+    const trip = currentTrip(); if (!trip) return;
+    showModal('📝 여행 메모',
+      '<textarea id="memoText" class="memo-box" placeholder="예약 번호, 준비물, 꼭 가져갈 것 등 자유롭게 적으세요">' + esc(trip.memo || '') + '</textarea>' +
+      '<button id="memoSave" class="btn btn-primary btn-block" style="margin-top:12px">메모 저장</button>');
+    $('#memoSave').addEventListener('click', () => {
+      trip.memo = $('#memoText').value;
+      S.saveTrip(trip);
+      closeModal();
+      toast('메모를 저장했어요');
+    });
+  }
+
   /* ================= 이동/시간표 ================= */
   function openTransportModal() {
     const trip = currentTrip(); if (!trip) return;
@@ -897,7 +966,12 @@
   async function openSettings() {
     const trip = currentTrip();
     const photoCount = await S.countPhotos();
+    const fp = await S.getFamilyPhoto();
     const body =
+      '<div class="set-row"><span>👨‍👩‍👧 가족 사진 (랜딩 화면)</span>' +
+      (fp ? '<img class="fam-preview" src="' + fp + '" alt="가족 사진">' : '') +
+      '<button id="stFamPhoto" class="btn btn-ghost" style="min-height:40px">📷 업로드</button>' +
+      (fp ? '<button id="stFamDel" class="btn btn-danger" style="min-height:40px">삭제</button>' : '') + '</div>' +
       '<div class="field"><label>새 여행 추가</label>' +
       '<input type="text" id="stName" placeholder="여행 이름 (예: 도쿄 가족여행)"><div style="display:flex;gap:8px;margin-top:8px">' +
       '<input type="date" id="stStart" style="flex:1"><input type="date" id="stEnd" style="flex:1"></div>' +
@@ -913,6 +987,13 @@
       '<button id="stReset" class="btn btn-danger" style="min-height:40px">초기화</button></div>' +
       '<div class="hint" style="margin-top:12px">사진은 기기 안에만 저장돼요. 리포트 PDF 저장으로 보존하세요. 일정·메모는 백업 파일로 옮길 수 있어요.</div>';
     showModal('설정', body);
+    $('#stFamPhoto').addEventListener('click', () => $('#familyPhotoInput').click());
+    $('#stFamDel').addEventListener('click', async () => {
+      if (!confirm('가족 사진을 삭제할까요?')) return;
+      await S.deleteFamilyPhoto();
+      closeModal();
+      toast('가족 사진을 삭제했어요');
+    });
     $('#stAdd').addEventListener('click', () => {
       const name = $('#stName').value.trim();
       const s = $('#stStart').value, e = $('#stEnd').value;
@@ -1021,6 +1102,19 @@
       pendingPhoto = { dayIdx: ctx.dayIdx, pIdx: ctx.pIdx, placeId: ctx.placeId };
       $('#photoInput').click();
     });
+  }
+
+  /* ---------- 가족 사진 (랜딩) ---------- */
+  async function onFamilyPhotoFile(e) {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const dataUrl = await S.compressImage(f, 800, 0.8);
+      await S.setFamilyPhoto(dataUrl);
+      toast('가족 사진을 저장했어요');
+    } catch (err) {
+      toast('사진 저장 실패: ' + err.message);
+    }
   }
 
   function openLightbox(placeId, photoId) {
