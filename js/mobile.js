@@ -56,7 +56,7 @@
       const b = e.target.closest('[data-tab]'); if (!b) return;
       switchTab(b.dataset.tab);
     });
-    $('#btnSettings').addEventListener('click', () => switchTab('more'));
+    $('#btnSettings').addEventListener('click', () => openAdmin());
     $('#tripBtn').addEventListener('click', showLanding);
     $('#btnAddPlace').addEventListener('click', () => openPlaceModal(null));
     // 지도 탭 → 장소 추가 배너 / 위치 선택 모드
@@ -193,35 +193,41 @@
       }
     });
 
-    // 더보기 탭: 카드 액션 (이벤트 위임)
-    $('#moreView').addEventListener('click', async e => {
+    // 더보기 탭 + 앱 관리 모달 공용: 카드 액션 (이벤트 위임)
+    document.addEventListener('click', async e => {
       const b = e.target.closest('[data-act]'); if (!b) return;
       const act = b.dataset.act;
-      if (act === 'goto-memo') { $('#memoText').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('#memoText').focus({ preventScroll: true }); }
-      else if (act === 'goto-new') { showLanding(); $('#ldNewForm').classList.remove('hidden'); $('#ldName').focus(); }
-      else if (act === 'fam-photo') { $('#familyPhotoInput').click(); }
-      else if (act === 'fam-del') {
+      if (act === 'open-admin') { openAdmin(); return; }
+      if (act === 'goto-memo') { $('#memoText').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('#memoText').focus({ preventScroll: true }); return; }
+      if (act === 'goto-new') { closeModal(); showLanding(); $('#ldNewForm').classList.remove('hidden'); $('#ldName').focus(); return; }
+      if (act === 'fam-photo') { $('#familyPhotoInput').click(); return; }
+      if (act === 'fam-del') {
         if (!confirm('가족 사진을 삭제할까요?')) return;
         await S.deleteFamilyPhoto();
-        renderMore();
+        openAdmin();
         toast('가족 사진을 삭제했어요');
+        return;
       }
-      else if (act === 'memo-save') {
+      if (act === 'memo-save') {
         const t = currentTrip();
         if (!t) return;
         t.memo = $('#memoText').value;
         S.saveTrip(t);
         toast('메모를 저장했어요');
-      } else if (act === 'del-trip') {
+        return;
+      }
+      if (act === 'del-trip') {
         const trip = currentTrip();
         if (!trip || !confirm('현재 여행을 삭제할까요? (일정만 삭제, 사진 유지)')) return;
         S.deleteTrip(trip.id);
         afterTripChange();
         toast('여행을 삭제했어요');
-      } else if (act === 'report') { openReport(); }
-      else if (act === 'export') { S.exportJSON(); toast('백업 파일을 저장했어요'); }
-      else if (act === 'import') { $('#importInput').click(); }
-      else if (act === 'reset') {
+        return;
+      }
+      if (act === 'report') { openReport(); return; }
+      if (act === 'export') { S.exportJSON(); toast('백업 파일을 저장했어요'); return; }
+      if (act === 'import') { $('#importInput').click(); return; }
+      if (act === 'reset') {
         if (!confirm('모든 여행·일정·사진을 지우고 기본 예시로 되돌릴까요?')) return;
         localStorage.removeItem('ft-state-v1');
         indexedDB.deleteDatabase('ft-photos');
@@ -774,7 +780,7 @@
       '<button class="trip-row" data-trip="' + t.id + '"><span class="chk">' + (t.id === st.activeTripId ? '✓' : '') + '</span>' +
       '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(t.name) + '</span>' +
       '<span style="color:var(--muted);font-size:12.5px">' + t.days.length + '일</span></button>').join('') +
-      '<div class="hint" style="margin-top:10px">새 여행 추가는 [더보기] 탭에서 할 수 있어요.</div>';
+      '<div class="hint" style="margin-top:10px">새 여행 추가는 랜딩 화면이나 [⚙️ 앱 관리]에서 할 수 있어요.</div>';
     showModal('여행 선택', body);
     document.querySelectorAll('#modalRoot [data-trip]').forEach(b => b.addEventListener('click', () => {
       S.setActiveTrip(b.dataset.trip);
@@ -1234,10 +1240,9 @@
   }
 
   /* ================= 더보기 탭 ================= */
+  let adminPhotoCount = 0, adminFp = null; // 앱 관리 모달용 캐시
   async function renderMore() {
     const trip = currentTrip();
-    const photoCount = await S.countPhotos();
-    const fp = await S.getFamilyPhoto();
     $('#moreView').innerHTML =
       '<div class="set-card"><div class="card-head">📌 현재 여행 — ' + esc(trip ? trip.name : '') + '</div>' +
         '<div class="set-row"><span class="lbl">📝 여행 메모 <span class="sub">예약 번호·준비물</span></span>' +
@@ -1251,19 +1256,35 @@
         '<div class="set-form"><textarea id="memoText" class="memo-box" placeholder="예약 번호, 준비물, 꼭 가져갈 것 등 자유롭게 적으세요">' + esc((trip && trip.memo) || '') + '</textarea>' +
         '<button class="btn btn-primary btn-block" data-act="memo-save">메모 저장</button></div>' +
       '</div>' +
-      '<div class="set-card"><div class="card-head">🛠 앱 관리</div>' +
-        '<div class="set-row"><span class="lbl">👨‍👩‍👧 가족 사진 <span class="sub">랜딩 화면에 표시</span></span>' +
-        '<span style="display:flex;gap:6px"><button class="btn btn-ghost" data-act="fam-photo">📷 업로드</button>' +
-        (fp ? '<button class="btn btn-danger" data-act="fam-del">삭제</button>' : '') + '</span></div>' +
-        (fp ? '<div class="set-row" style="justify-content:center"><img class="fam-preview" src="' + fp + '" alt="가족 사진"></div>' : '') +
-        '<div class="set-row"><span class="lbl">✈️ 새 여행 <span class="sub">랜딩에서도 만들 수 있어요</span></span>' +
-        '<button class="btn btn-ghost" data-act="goto-new">만들기</button></div>' +
-        '<div class="set-row"><span class="lbl">백업 내보내기 <span class="sub">여행·설정 전체</span></span><button class="btn btn-ghost" data-act="export">내보내기</button></div>' +
-        '<div class="set-row"><span class="lbl">백업 불러오기</span><button class="btn btn-ghost" data-act="import">가져오기</button></div>' +
-        '<div class="set-row"><span class="lbl">저장된 사진 <span class="sub">' + photoCount + '장 · 이 기기에만</span></span></div>' +
-        '<div class="set-row"><span class="lbl" style="color:var(--danger)">모든 데이터 초기화</span><button class="btn btn-danger" data-act="reset">초기화</button></div>' +
+      '<div class="set-card"><div class="card-head">🛠 앱 관리 <span class="sub">사진·백업·초기화</span></div>' +
+        '<div class="set-row"><span class="lbl">가족 사진, 백업, 데이터 초기화 등 전체 관리</span>' +
+        '<button class="btn btn-ghost" data-act="open-admin">⚙️ 열기</button></div>' +
       '</div>' +
       '<div class="tp-guide">PC에서는 <a href="index.html" style="color:var(--accent);font-weight:700">웹 버전</a>을 사용하세요. 같은 데이터를 공유해요.</div>';
+  }
+
+  // 앱 관리: 여행과 무관한 전체 기능 — 실수 방지를 위해 별도 화면(모달)으로 분리
+  async function openAdmin() {
+    adminPhotoCount = await S.countPhotos();
+    adminFp = await S.getFamilyPhoto();
+    showModal('🛠 앱 관리',
+      '<div class="set-card"><div class="card-head">👨‍👩‍👧 가족 사진 <span class="sub">랜딩 화면에 표시</span></div>' +
+        '<div class="set-row"><span class="lbl">사진 변경</span>' +
+        '<span style="display:flex;gap:6px"><button class="btn btn-ghost" data-act="fam-photo">📷 업로드</button>' +
+        (adminFp ? '<button class="btn btn-danger" data-act="fam-del">삭제</button>' : '') + '</span></div>' +
+        (adminFp ? '<div class="set-row" style="justify-content:center"><img class="fam-preview" src="' + adminFp + '" alt="가족 사진"></div>' : '') +
+      '</div>' +
+      '<div class="set-card"><div class="card-head">✈️ 새 여행</div>' +
+        '<div class="set-row"><span class="lbl">랜딩 화면에서 만들 수 있어요</span>' +
+        '<button class="btn btn-ghost" data-act="goto-new">만들기</button></div>' +
+      '</div>' +
+      '<div class="set-card"><div class="card-head">💾 데이터</div>' +
+        '<div class="set-row"><span class="lbl">백업 내보내기 <span class="sub">여행·설정 전체</span></span><button class="btn btn-ghost" data-act="export">내보내기</button></div>' +
+        '<div class="set-row"><span class="lbl">백업 불러오기</span><button class="btn btn-ghost" data-act="import">가져오기</button></div>' +
+        '<div class="set-row"><span class="lbl">저장된 사진 <span class="sub">' + adminPhotoCount + '장 · 이 기기에만</span></span></div>' +
+        '<div class="set-row"><span class="lbl" style="color:var(--danger)">모든 데이터 초기화</span><button class="btn btn-danger" data-act="reset">초기화</button></div>' +
+      '</div>' +
+      '<div class="hint">앱 전체에 영향을 주는 기능이에요. 여행 일정 편집은 [일정] 탭을 사용하세요.</div>');
   }
 
   /* ================= 리포트 ================= */
@@ -1387,7 +1408,7 @@
     try {
       const dataUrl = await S.compressImage(f, 800, 0.8);
       await S.setFamilyPhoto(dataUrl);
-      renderMore();
+      openAdmin(); // 모달 갱신 (미리보기/삭제 버튼 상태)
       toast('가족 사진을 저장했어요');
     } catch (err) {
       toast('사진 저장 실패: ' + err.message);
