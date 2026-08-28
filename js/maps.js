@@ -151,6 +151,7 @@ window.FTMap = (function () {
   }
 
   // 차/도보: waypoints 한 번에 요청
+  // opts.alternatives: 대안 경로 수집 (단일 구간 + 차량에서 유효 — 구글은 일본 대중교통 미지원)
   function drawRoute(places, mode, color, onDone, opts) {
     opts = opts || {};
     if (!opts.keep) clearRoute();
@@ -159,10 +160,12 @@ window.FTMap = (function () {
     const svc = new google.maps.DirectionsService();
     const origin = valid[0], dest = valid[valid.length - 1];
     const waypoints = valid.slice(1, -1).map(p => ({ location: { lat: p.lat, lng: p.lng }, stopover: true }));
+    const wantAlt = !!opts.alternatives && valid.length === 2;
     routeReq(svc, {
       origin: { lat: origin.lat, lng: origin.lng },
       destination: { lat: dest.lat, lng: dest.lng },
-      waypoints: waypoints, optimizeWaypoints: false, travelMode: mode
+      waypoints: waypoints, optimizeWaypoints: false, travelMode: mode,
+      provideRouteAlternatives: wantAlt
     }).then(got => {
       if (got.status !== 'OK') { onDone({ error: '경로를 찾지 못했어요 (' + got.status + ')' }); return; }
       const res = got.res;
@@ -180,12 +183,32 @@ window.FTMap = (function () {
           vehicle: main && main.transit ? main.transit.line.vehicle.type : null
         });
       });
-      onDone({ ok: true, dist: totalD.toFixed(1), time: Math.round(totalT), legs: steps });
+      const out = { ok: true, dist: totalD.toFixed(1), time: Math.round(totalT), legs: steps };
+      // 대안 수집 (idx 0 = 기본 경로, 위에서 그림)
+      if (wantAlt && res.routes.length > 1) {
+        const toAlt = (rt, idx) => {
+          const l0 = rt.legs[0];
+          const main = l0.steps.find(s => s.travel_mode === 'TRANSIT');
+          return {
+            idx: idx,
+            summary: rt.summary || '경로 ' + (idx + 1),
+            dur: l0.duration.text, dist: l0.distance.text,
+            line: main && main.transit ? (main.transit.line.short_name || main.transit.line.name) : null,
+            vehicle: main && main.transit ? main.transit.line.vehicle.type : null,
+            path: routePath({ routes: [rt] })
+          };
+        };
+        out.alternatives = [Object.assign(toAlt(res.routes[0], 0), { selected: true })]
+          .concat(res.routes.slice(1, 6).map((rt, k) => toAlt(rt, k + 1)));
+        out.altSelected = 0;
+      }
+      onDone(out);
     });
   }
 
   // 대중교통: 구간별 순차 요청 (경유지 미지원 + 할당량 폭주 방지)
   // 대중교통 없으면 도보 대체 → 그것도 실패/과도하면 '시간표 안내' 처리 (항상 완료됨)
+  // opts.alternatives: 출발지→도착지 1구간일 때 여러 대안 경로도 함께 수집
   async function drawTransit(places, color, onDone, opts) {
     opts = opts || {};
     if (!opts.keep) clearRoute();
@@ -213,11 +236,48 @@ window.FTMap = (function () {
       };
     }
 
+    // 대안 경로(alt): 하나의 leg를 여러 후보로 표현 — 지도에는 선택된 것만 그림
+    function altInfo(res, idx) {
+      const leg = res.legs[0];
+      const transit = leg.steps.filter(s => s.travel_mode === 'TRANSIT').map(s => {
+        const t = s.transit;
+        return {
+          line: t.line.short_name || t.line.name,
+          vehicle: t.line.vehicle.type,
+          dep: t.departure_stop.name, arr: t.arrival_stop.name,
+          depT: t.departure_time ? t.departure_time.text : null,
+          arrT: t.arrival_time ? t.arrival_time.text : null,
+          dur: s.duration.text
+        };
+      });
+      const summaryLines = [];
+      leg.steps.forEach(s => {
+        if (s.travel_mode === 'TRANSIT' && s.transit) summaryLines.push(s.transit.line.short_name || s.transit.line.name);
+      });
+      const summary = summaryLines.length ? summaryLines.join(' + ') : '도보';
+      return {
+        idx: idx,
+        summary: summary,
+        dur: leg.duration.text,
+        dist: leg.distance ? leg.distance.text : '',
+        transit: transit,
+        walkOnly: transit.length === 0 && leg.duration.value <= 2400,
+        noTransit: transit.length === 0 && leg.duration.value > 2400,
+        path: routePath({ routes: [res] })
+      };
+    }
+
     for (let i = 0; i < valid.length - 1; i++) {
       const from = valid[i], to = valid[i + 1];
       const req = { origin: { lat: from.lat, lng: from.lng }, destination: { lat: to.lat, lng: to.lng } };
       // TRANSIT은 departureTime 필수 (없으면 ZERO_RESULTS/NOT_FOUND) — 현재 시각 기준 요청
-      let got = await routeReq(svc, Object.assign({ travelMode: 'TRANSIT', transitOptions: { departureTime: new Date() } }, req));
+      // 대안: 단일 구간일 때만 provideRouteAlternatives (구간별 폭주 방지)
+      const wantAlt = !!opts.alternatives && valid.length === 2;
+      let got = await routeReq(svc, Object.assign({
+        travelMode: 'TRANSIT',
+        transitOptions: { departureTime: new Date() },
+        provideRouteAlternatives: wantAlt
+      }, req));
       if (got.status !== 'OK') {
         got = await routeReq(svc, Object.assign({ travelMode: 'WALKING' }, req));
       }
@@ -233,6 +293,13 @@ window.FTMap = (function () {
         out.noTransit = walkTooLong;
         // 폴백이든 대중교통이든 지도에는 항상 경로를 그려줌 (안내 문구만 다름)
         addRoutePolyline(routePath(got.res), color, 5);
+        // 대안 수집: 대중교통 응답에서 2번째 이후 경로 (idx 0은 위에서 그린 기본 경로)
+        if (wantAlt && got.res.routes && got.res.routes.length > 1) {
+          out.alternatives = got.res.routes.slice(1, 6).map((rt, k) => altInfo(rt, k + 1));
+          // 기본 경로도 alternatives 목록에 포함 (선택 UI 통일)
+          out.alternatives.unshift(Object.assign(altInfo(got.res.routes[0], 0), { selected: true }));
+          out.altSelected = 0;
+        }
       } else {
         out.noTransit = true;
         out.dur = got.status;
@@ -240,6 +307,12 @@ window.FTMap = (function () {
       legsOut.push(out);
     }
     onDone({ ok: true, transit: true, legs: legsOut });
+  }
+
+  // 대안 경로 지도 반영: 캐시된 경로점으로 폴리라인 교체 (재요청 없음)
+  function drawPath(path, color, weight) {
+    clearRoute();
+    if (path && path.length) addRoutePolyline(path, color, weight || 5);
   }
 
   /* ---------- 검색 ---------- */
@@ -310,5 +383,5 @@ window.FTMap = (function () {
     });
   }
 
-  return { init, setMarkers, clearMarkers, fitBounds, panTo, getCenter, isReady, clearRoute, rendererCount, drawRoute, drawTransit, searchText, nearbyFood, placeDetails };
+  return { init, setMarkers, clearMarkers, fitBounds, panTo, getCenter, isReady, clearRoute, rendererCount, drawRoute, drawTransit, drawPath, searchText, nearbyFood, placeDetails };
 })();

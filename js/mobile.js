@@ -129,6 +129,8 @@
     // 경로 패널 (지도 상단 카드 + 시트 내부 공용)
     const routePanelClick = e => {
       if (e.target.closest('#routeClose')) { hideRoute(); return; }
+      const alt = e.target.closest('[data-altidx]');
+      if (alt) { selectAlt(Number(alt.dataset.altidx)); return; }
       if (e.target.closest('[data-rptoggle]')) { routePanelExpanded = !routePanelExpanded; renderRoutePanel(); return; }
       const seg = e.target.closest('[data-mode]');
       if (seg) setRouteMode(seg.dataset.mode);
@@ -878,7 +880,10 @@
       '<button class="rb-pick-btn' + (o ? ' on' : '') + '" data-pickbtn="originId">🚩 출발 <span class="val">' + esc(o ? o.name : '선택') + '</span>' + (o ? '<span data-pickclear="originId">✕</span>' : '') + '</button>' +
       '<button class="rb-pick-btn' + (d ? ' on' : '') + '" data-pickbtn="destId">🏁 도착 <span class="val">' + esc(d ? d.name : '선택') + '</span>' + (d ? '<span data-pickclear="destId">✕</span>' : '') + '</button>';
     bar.insertBefore(wrap, bar.querySelector('.rb-info'));
-    $('#rbCount').textContent = (o && d) ? '출발 → 도착 경로 표시 중' : (o ? '도착지를 선택하세요' : '출발지를 선택하세요 — 목록이나 지도 마커를 눌러요');
+    // 출발=도착은 경로를 그릴 수 없음 — 대기 문구 대신 안내 표시 (redrawPicked와 동일 판정)
+    $('#rbCount').textContent = (o && d)
+      ? (routePick.originId === routePick.destId ? '출발지와 도착지가 같아요 — 다른 장소를 골라 주세요' : '출발 → 도착 경로 표시 중')
+      : (o ? '도착지를 선택하세요' : '출발지를 선택하세요 — 목록이나 지도 마커를 눌러요');
   }
 
   function placesForPick() {
@@ -957,8 +962,11 @@
     let guard = setTimeout(() => renderRouteResult({ error: '경로 계산이 오래 걸리고 있어요. 네트워크를 확인하고 다시 시도해 주세요.' }), 20000);
     const finish = (r) => { clearTimeout(guard); renderRouteResult(r); };
     try {
+      // 대안 경로: 대중교통은 구글이 일본 미지원(ZERO_RESULTS)이라 의미가 없고,
+      // 차량 모드에서는 도심 구간에서 2~3개 대안이 실제로 돌아옴 → 차량일 때만 대안 요청
+      const wantAlt = routeMode === 'DRIVING';
       if (routeMode === 'TRANSIT') M.drawTransit([op, dp], color, finish);
-      else M.drawRoute([op, dp], routeMode, color, finish);
+      else M.drawRoute([op, dp], routeMode, color, finish, { alternatives: wantAlt });
     } catch (e) { clearTimeout(guard); renderRouteResult({ error: '경로 요청 오류: ' + e.message }); }
     // 경로가 보이게 지도 프레임 조정 + 시트 접어 지도 확보
     // 상단 카드(~110px)와 하단 시트(peek ~240px)에 가리지 않도록 여백
@@ -1067,8 +1075,60 @@
       '</div>';
   }
 
+  // ===== 대안 경로 (구글 provideRouteAlternatives — 차량 모드) =====
+  // 상태: 선택된 대안 인덱스 + leg 데이터 캐시 (지도 다시 그릴 때 재요청 없음)
+  let altLeg = null;        // drawRoute 결과 leg (alternatives 포함)
+  let altSelected = 0;      // 현재 선택된 대안 인덱스
+
+  function renderDrivingAlternatives(leg) {
+    altLeg = leg;
+    altSelected = leg.altSelected || 0;
+    renderAltPanel();
+  }
+
+  function altRowsHtml(leg) {
+    return leg.alternatives.map(a => {
+      const on = a.idx === altSelected;
+      return '<button type="button" class="alt-row' + (on ? ' on' : '') + '" data-altidx="' + a.idx + '">' +
+        '<span class="alt-sum">' + esc(a.summary) + '</span>' +
+        '<span class="alt-meta">' + esc(a.dist) + '</span>' +
+        '<span class="alt-dur">' + esc(a.dur) + '</span>' +
+        '</button>';
+    }).join('');
+  }
+
+  function altDetailHtml(leg) {
+    const a = leg.alternatives[altSelected];
+    if (!a) return '';
+    let h = '<span class="tm">' + esc(a.dur) + ' · ' + esc(a.dist) + '</span>';
+    if (a.line) h += '<div><span class="line">' + esc(a.vehicle === 'BUS' ? '🚌' : '🚄') + ' ' + esc(a.line) + '</span></div>';
+    return h;
+  }
+
+  function renderAltPanel() {
+    const leg = altLeg;
+    const a = leg.alternatives[altSelected];
+    const detail = altDetailHtml(leg);
+    const rows = '<div class="alt-list">' + altRowsHtml(leg) + '</div>';
+    showRoutePanel('경로 옵션 ' + (altSelected + 1) + '/' + leg.alternatives.length + ' · ' + esc(a.dur), rows + '<div class="leg" style="border-top:none">' + detail + '</div>');
+  }
+
+  function selectAlt(idx) {
+    if (!altLeg || !altLeg.alternatives[idx]) return;
+    altSelected = idx;
+    const color = dayColor(activeDay - 1);
+    M.drawPath(altLeg.alternatives[idx].path, color, 5);
+    renderAltPanel();
+  }
+
   function renderRouteResult(r) {
     if (r.error) { showRoutePanel('경로 계산 실패', '<div style="color:var(--danger)">' + esc(r.error) + '</div>', { expanded: true }); return; }
+    // 대안 경로: 단일 구간 + 대안 2개 이상이면 경로 옵션 선택 UI (차량 기준, 대중교통은 일본 미지원)
+    // maps.js가 alternatives를 결과 최상위에 붙이므로 r.alternatives로 판정
+    if (!r.transit && r.alternatives && r.alternatives.length > 1) {
+      renderDrivingAlternatives(r);
+      return;
+    }
     if (r.transit) {
       let h = '';
       r.legs.forEach((leg, i) => {
@@ -1155,6 +1215,7 @@
     $('#routeInfo').classList.add('hidden');
     $('#sheetRouteInfo').classList.add('hidden');
     lastRoutePanel = null;
+    altLeg = null; // 대안 경로 캐시도 함께 해제
     M.clearRoute();
   }
 
