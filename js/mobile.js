@@ -197,15 +197,9 @@
     $('#moreView').addEventListener('click', async e => {
       const b = e.target.closest('[data-act]'); if (!b) return;
       const act = b.dataset.act;
-      if (act === 'add-trip') {
-        const name = $('#stName').value.trim();
-        const s = $('#stStart').value, en = $('#stEnd').value;
-        if (!name || !s || !en) { toast('이름과 날짜를 입력해 주세요'); return; }
-        if (en < s) { toast('종료일이 시작일보다 빠를 수 없어요'); return; }
-        S.addTrip(name, s, en);
-        afterTripChange();
-        toast('여행을 추가했어요');
-      } else if (act === 'fam-photo') { $('#familyPhotoInput').click(); }
+      if (act === 'goto-memo') { $('#memoText').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('#memoText').focus({ preventScroll: true }); }
+      else if (act === 'goto-new') { showLanding(); $('#ldNewForm').classList.remove('hidden'); $('#ldName').focus(); }
+      else if (act === 'fam-photo') { $('#familyPhotoInput').click(); }
       else if (act === 'fam-del') {
         if (!confirm('가족 사진을 삭제할까요?')) return;
         await S.deleteFamilyPhoto();
@@ -1245,31 +1239,26 @@
     const photoCount = await S.countPhotos();
     const fp = await S.getFamilyPhoto();
     $('#moreView').innerHTML =
-      '<div class="set-card"><div class="card-head">👨‍👩‍👧 가족 사진</div>' +
-        (fp ? '<div class="set-row" style="justify-content:center"><img class="fam-preview" src="' + fp + '" alt="가족 사진"></div>' : '') +
-        '<div class="set-row"><span class="lbl">랜딩 화면에 표시</span>' +
-        '<button class="btn btn-ghost" data-act="fam-photo">📷 업로드</button>' +
-        (fp ? '<button class="btn btn-danger" data-act="fam-del">삭제</button>' : '') +
-        '</div></div>' +
+      '<div class="set-card"><div class="card-head">📌 현재 여행 — ' + esc(trip ? trip.name : '') + '</div>' +
+        '<div class="set-row"><span class="lbl">📝 여행 메모 <span class="sub">예약 번호·준비물</span></span>' +
+        '<button class="btn btn-ghost" data-act="goto-memo">열기</button></div>' +
+        '<div class="set-row"><span class="lbl">여행 리포트 <span class="sub">사진·일정 한눈에 · PDF 저장</span></span>' +
+        '<button class="btn btn-ghost" data-act="report">📖 열기</button></div>' +
+        '<div class="set-row"><span class="lbl" style="color:var(--danger)">이 여행 삭제</span>' +
+        '<button class="btn btn-danger" data-act="del-trip">삭제</button></div>' +
+      '</div>' +
       '<div class="set-card"><div class="card-head">📝 여행 메모</div>' +
         '<div class="set-form"><textarea id="memoText" class="memo-box" placeholder="예약 번호, 준비물, 꼭 가져갈 것 등 자유롭게 적으세요">' + esc((trip && trip.memo) || '') + '</textarea>' +
         '<button class="btn btn-primary btn-block" data-act="memo-save">메모 저장</button></div>' +
       '</div>' +
-      '<div class="set-card"><div class="card-head">✈️ 새 여행</div><div class="set-form">' +
-        '<div class="field-sm"><label>여행 이름</label><input type="text" id="stName" placeholder="예: 도쿄 가족여행"></div>' +
-        '<div class="field-sm"><label>기간</label><div class="date-row"><input type="date" id="stStart"><input type="date" id="stEnd"></div></div>' +
-        '<button class="btn btn-primary btn-block" data-act="add-trip">여행 추가</button>' +
-      '</div></div>' +
-      '<div class="set-card"><div class="card-head">📌 현재 여행</div>' +
-        '<div class="set-row"><span class="lbl">' + esc(trip ? trip.name : '') + '</span>' +
-        '<button class="btn btn-danger" data-act="del-trip">삭제</button></div>' +
-      '</div>' +
-      '<div class="set-card"><div class="card-head">📖 추억</div>' +
-        '<div class="set-row"><span class="lbl">여행 리포트 <span class="sub">사진·일정 한눈에 · PDF 저장</span></span>' +
-        '<button class="btn btn-ghost" data-act="report">📖 열기</button></div>' +
-      '</div>' +
-      '<div class="set-card"><div class="card-head">💾 데이터</div>' +
-        '<div class="set-row"><span class="lbl">백업 내보내기</span><button class="btn btn-ghost" data-act="export">내보내기</button></div>' +
+      '<div class="set-card"><div class="card-head">🛠 앱 관리</div>' +
+        '<div class="set-row"><span class="lbl">👨‍👩‍👧 가족 사진 <span class="sub">랜딩 화면에 표시</span></span>' +
+        '<span style="display:flex;gap:6px"><button class="btn btn-ghost" data-act="fam-photo">📷 업로드</button>' +
+        (fp ? '<button class="btn btn-danger" data-act="fam-del">삭제</button>' : '') + '</span></div>' +
+        (fp ? '<div class="set-row" style="justify-content:center"><img class="fam-preview" src="' + fp + '" alt="가족 사진"></div>' : '') +
+        '<div class="set-row"><span class="lbl">✈️ 새 여행 <span class="sub">랜딩에서도 만들 수 있어요</span></span>' +
+        '<button class="btn btn-ghost" data-act="goto-new">만들기</button></div>' +
+        '<div class="set-row"><span class="lbl">백업 내보내기 <span class="sub">여행·설정 전체</span></span><button class="btn btn-ghost" data-act="export">내보내기</button></div>' +
         '<div class="set-row"><span class="lbl">백업 불러오기</span><button class="btn btn-ghost" data-act="import">가져오기</button></div>' +
         '<div class="set-row"><span class="lbl">저장된 사진 <span class="sub">' + photoCount + '장 · 이 기기에만</span></span></div>' +
         '<div class="set-row"><span class="lbl" style="color:var(--danger)">모든 데이터 초기화</span><button class="btn btn-danger" data-act="reset">초기화</button></div>' +
