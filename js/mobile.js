@@ -218,10 +218,8 @@
       }
       if (act === 'del-trip') {
         const trip = currentTrip();
-        if (!trip || !confirm('현재 여행을 삭제할까요? (일정만 삭제, 사진 유지)')) return;
-        S.deleteTrip(trip.id);
-        afterTripChange();
-        toast('여행을 삭제했어요');
+        if (!trip) return;
+        confirmDeleteTrip(trip);
         return;
       }
       if (act === 'report') { openReport(); return; }
@@ -1249,8 +1247,6 @@
         '<button class="btn btn-ghost" data-act="goto-memo">열기</button></div>' +
         '<div class="set-row"><span class="lbl">여행 리포트 <span class="sub">사진·일정 한눈에 · PDF 저장</span></span>' +
         '<button class="btn btn-ghost" data-act="report">📖 열기</button></div>' +
-        '<div class="set-row"><span class="lbl" style="color:var(--danger)">이 여행 삭제</span>' +
-        '<button class="btn btn-danger" data-act="del-trip">삭제</button></div>' +
       '</div>' +
       '<div class="set-card"><div class="card-head">📝 여행 메모</div>' +
         '<div class="set-form"><textarea id="memoText" class="memo-box" placeholder="예약 번호, 준비물, 꼭 가져갈 것 등 자유롭게 적으세요">' + esc((trip && trip.memo) || '') + '</textarea>' +
@@ -1259,8 +1255,35 @@
       '<div class="set-card"><div class="card-head">🛠 앱 관리 <span class="sub">사진·백업·초기화</span></div>' +
         '<div class="set-row"><span class="lbl">가족 사진, 백업, 데이터 초기화 등 전체 관리</span>' +
         '<button class="btn btn-ghost" data-act="open-admin">⚙️ 열기</button></div>' +
+        '<div class="set-row"><span class="lbl">위험 구역</span>' +
+        '<button class="btn btn-ghost" data-act="del-trip">🗑️ 이 여행 삭제</button></div>' +
       '</div>' +
       '<div class="tp-guide">PC에서는 <a href="index.html" style="color:var(--accent);font-weight:700">웹 버전</a>을 사용하세요. 같은 데이터를 공유해요.</div>';
+  }
+
+  // 여행 삭제 확인: "삭제" 타이핑해야 활성화되는 2단계 확인창 (실수 방지)
+  function confirmDeleteTrip(trip) {
+    showModal('🗑️ 여행 삭제',
+      '<p style="margin:0 0 10px"><b>' + esc(trip.name) + '</b> 여행을 삭제할까요?</p>' +
+      '<div class="hint" style="margin-bottom:14px">일정·메모가 삭제되고 되돌릴 수 없어요. 사진은 이 기기에 유지돼요.</div>' +
+      '<div class="field-sm"><label>진행하려면 "삭제"를 입력하세요</label>' +
+      '<input type="text" id="delConfirm" placeholder="삭제" autocomplete="off"></div>' +
+      '<button id="delGo" class="btn btn-danger btn-block" type="button" disabled style="margin-top:12px;opacity:.5">삭제하기</button>');
+    const input = $('#delConfirm');
+    const go = $('#delGo');
+    input.addEventListener('input', () => {
+      const okd = input.value.trim() === '삭제';
+      go.disabled = !okd;
+      go.style.opacity = okd ? '1' : '.5';
+    });
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !go.disabled) go.click(); });
+    go.addEventListener('click', () => {
+      if (input.value.trim() !== '삭제') return;
+      S.deleteTrip(trip.id);
+      closeModal();
+      afterTripChange();
+      toast('여행을 삭제했어요');
+    });
   }
 
   // 앱 관리: 여행과 무관한 전체 기능 — 실수 방지를 위해 별도 화면(모달)으로 분리
